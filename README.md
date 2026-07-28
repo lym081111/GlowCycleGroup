@@ -14,6 +14,10 @@ Slogan: **Track beauty. Reduce waste. Glow responsibly.**
 - Product status classification: Unopened, Safe, Use Soon, Expired, Finished, Recycled.
 - Duplicate purchase reminder through Wishlist Check.
 - Eco points and achievement badges.
+- Firebase Authentication and Cloud Firestore for each signed-in user's data.
+- On-device ML Kit OCR and Firebase AI Logic with Gemini for product-package
+  extraction and inventory-aware skincare guidance. Product scans fall back to
+  local OCR when Gemini is unavailable.
 
 ## Technologies Used
 
@@ -23,6 +27,8 @@ Slogan: **Track beauty. Reduce waste. Glow responsibly.**
 - `http` for REST API integration
 - `intl` for date formatting
 - `flutter_launcher_icons` for launcher icon generation
+- Firebase Authentication, Cloud Firestore, and Firebase AI Logic (Gemini)
+- `google_mlkit_text_recognition` for on-device OCR
 
 ## Main Screens
 

@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_ai/firebase_ai.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide EmailAuthProvider;
@@ -4102,19 +4101,96 @@ class GlowStore {
   }) async {
     if (_useFirebase) {
       try {
-        final callable = FirebaseFunctions.instance.httpsCallable(
-          'extractProductFromPackaging',
+        return await _scanProductWithGemini(
+          ocrText: ocrText,
+          imageDataUri: imageDataUri,
         );
-        final response = await callable.call<Map<String, dynamic>>({
-          'ocrText': ocrText,
-          'imageDataUri': imageDataUri,
-        });
-        return ProductScanResult.fromJson(response.data, ocrText);
-      } catch (_) {
+      } catch (exception) {
+        if (kDebugMode) {
+          debugPrint('Gemini product scan fallback: $exception');
+        }
         return ProductScanResult.fromOcrHeuristic(ocrText);
       }
     }
     return ProductScanResult.fromOcrHeuristic(ocrText);
+  }
+
+  Future<ProductScanResult> _scanProductWithGemini({
+    required String ocrText,
+    required String imageDataUri,
+  }) async {
+    final dataUri = RegExp(
+      r'^data:([^;]+);base64,(.+)$',
+    ).firstMatch(imageDataUri);
+    if (dataUri == null) {
+      throw const FormatException('The product photo is not a valid image.');
+    }
+
+    final responseSchema = Schema.object(
+      properties: {
+        'productName': Schema.string(),
+        'brand': Schema.string(),
+        'category': Schema.enumString(enumValues: productCategories),
+        'ingredients': Schema.array(items: Schema.string()),
+        'manufactureDate': Schema.string(nullable: true),
+        'expiryDate': Schema.string(nullable: true),
+        'paoMonths': Schema.integer(nullable: true, minimum: 1, maximum: 60),
+        'batchNumber': Schema.string(),
+        'confidence': Schema.number(minimum: 0, maximum: 1),
+      },
+    );
+    final model = FirebaseAI.googleAI().generativeModel(
+      model: 'gemini-3.5-flash',
+      generationConfig: GenerationConfig(
+        temperature: 0,
+        maxOutputTokens: 900,
+        responseMimeType: 'application/json',
+        responseSchema: responseSchema,
+      ),
+    );
+    final prompt = '''
+You extract facts from a beauty-product package. Use the photo and OCR text
+together; the photo is primary when OCR characters are unclear.
+
+Return the requested JSON only. Follow these rules exactly:
+- Extract only text that is visibly present. Never invent a brand, ingredient,
+  batch number, manufacturing date, expiry date, or PAO value.
+- For dates, return ISO yyyy-MM-dd only when the printed label makes the date
+  unambiguous; otherwise return null. Do not calculate an expiry date from PAO.
+- Extract PAO only from an opened-jar label such as 6M, 12M, or 24M; otherwise
+  return null.
+- Ingredients must be individual INCI ingredients, not instructions, warnings,
+  marketing claims, or a guessed ingredient list. Use [] when no ingredient
+  list is visible.
+- Select a category only from the supplied category list. Use Others when the
+  package type cannot be confidently classified.
+- productName and brand may be empty strings when unreadable.
+- confidence must reflect the reliability of the visible evidence, from 0 to 1.
+
+OCR text from this image:
+${ocrText.isEmpty ? '(No readable OCR text.)' : ocrText}
+''';
+    final response = await model
+        .generateContent([
+          Content.multi([
+            TextPart(prompt),
+            InlineDataPart(dataUri.group(1)!, base64Decode(dataUri.group(2)!)),
+          ]),
+        ])
+        .timeout(const Duration(seconds: 25));
+    final raw = response.text;
+    if (raw == null || raw.trim().isEmpty) {
+      throw const FormatException('Gemini returned an empty product scan.');
+    }
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Gemini returned an invalid product scan.');
+    }
+    return ProductScanResult.fromJson(
+      decoded,
+      ocrText,
+      source: 'gemini-vision',
+    );
   }
 
   Future<AssistantReply> askAssistant({
@@ -4391,8 +4467,9 @@ class ProductScanResult {
 
   factory ProductScanResult.fromJson(
     Map<String, dynamic> json,
-    String fallbackText,
-  ) {
+    String fallbackText, {
+    String source = 'gemini',
+  }) {
     return ProductScanResult(
       productName: (json['productName'] ?? '').toString(),
       brand: (json['brand'] ?? '').toString(),
@@ -4402,10 +4479,10 @@ class ProductScanResult {
       ingredients: _cleanIngredients((json['ingredients'] as List?) ?? []),
       manufactureDate: parseOptionalDate(json['manufactureDate']),
       expiryDate: parseOptionalDate(json['expiryDate']),
-      paoMonths: (json['paoMonths'] as num?)?.round(),
+      paoMonths: num.tryParse((json['paoMonths'] ?? '').toString())?.round(),
       batchNumber: (json['batchNumber'] ?? '').toString(),
       confidence: ((json['confidence'] as num?)?.toDouble() ?? 0).clamp(0, 1),
-      source: 'firebase-ai',
+      source: source,
       rawTextPreview: _previewText(fallbackText),
     );
   }
