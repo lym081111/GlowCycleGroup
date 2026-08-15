@@ -44,6 +44,9 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen> {
     if (text.isEmpty || _sending) {
       return;
     }
+    // Conversation so far, minus the seeded greeting, which carries no user
+    // context and would only spend tokens.
+    final history = _messages.skip(1).toList();
     setState(() {
       _controller.clear();
       _messages.add(AssistantChatMessage(role: 'user', text: text));
@@ -53,22 +56,32 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen> {
     final reply = await widget.store.askAssistant(
       message: text,
       products: widget.products,
+      history: history,
     );
-    final replyText = '${reply.message}\n\n${reply.safetyNote}';
     if (!mounted) {
       return;
     }
     setState(() {
-      _messages.add(AssistantChatMessage(role: 'assistant', text: replyText));
+      _messages.add(
+        AssistantChatMessage(
+          role: 'assistant',
+          text: reply.message,
+          safetyNote: reply.safetyNote,
+          fromFallback: reply.fromFallback,
+        ),
+      );
       _sending = false;
     });
-    await widget.store.saveChatMessage(role: 'assistant', text: replyText);
+    await widget.store.saveChatMessage(
+      role: 'assistant',
+      text: '${reply.message}\n\n${reply.safetyNote}',
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final usableProducts = widget.products
-        .where((item) => item.resolvedStatus(DateTime.now()) == 'Safe')
+        .where((item) => item.isRecommendable(DateTime.now()))
         .length;
     return Column(
       children: [
@@ -94,7 +107,7 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        '$usableProducts safe products available for recommendations.',
+                        '$usableProducts usable products available for recommendations.',
                         style: const TextStyle(
                           color: ink,
                           fontWeight: FontWeight.w800,
@@ -182,9 +195,51 @@ class AssistantBubble extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: ink.withValues(alpha: 0.06)),
         ),
-        child: Text(
-          message.text,
-          style: TextStyle(color: isUser ? Colors.white : ink, height: 1.35),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              message.text,
+              style: TextStyle(
+                color: isUser ? Colors.white : ink,
+                height: 1.35,
+              ),
+            ),
+            if (message.safetyNote != null &&
+                message.safetyNote!.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                message.safetyNote!,
+                style: TextStyle(
+                  color: ink.withValues(alpha: 0.6),
+                  height: 1.3,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+            if (message.fromFallback) ...[
+              const SizedBox(height: 10),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.cloud_off_outlined,
+                    size: 13,
+                    color: secondary.withValues(alpha: 0.8),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    'Offline guidance',
+                    style: TextStyle(
+                      color: secondary.withValues(alpha: 0.8),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
         ),
       ),
     );

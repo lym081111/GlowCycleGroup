@@ -7,11 +7,16 @@ class AssistantReply {
     required this.message,
     required this.productNames,
     required this.safetyNote,
+    this.fromFallback = false,
   });
 
   final String message;
   final List<String> productNames;
   final String safetyNote;
+
+  /// True when this answer came from the offline rule engine rather than
+  /// Gemini, so the UI can say so instead of degrading silently.
+  final bool fromFallback;
 
   factory AssistantReply.fromJson(Map<String, dynamic> json) {
     return AssistantReply(
@@ -30,7 +35,7 @@ class AssistantReply {
     final now = DateTime.now();
     final eyeConcern = _isEyeConcern(lower);
     final active = products
-        .where((item) => item.resolvedStatus(now) == 'Safe')
+        .where((item) => item.isRecommendable(now))
         .toList();
     final gentle = active.where((item) {
       final text =
@@ -69,6 +74,7 @@ class AssistantReply {
         productNames: names,
         safetyNote:
             'Glow Assistant is not a medical diagnosis. For eye pain, light sensitivity, discharge, swelling, vision changes, or symptoms that persist, seek prompt advice from an optometrist or doctor.',
+        fromFallback: true,
       );
     }
 
@@ -214,6 +220,7 @@ class AssistantReply {
       productNames: names,
       safetyNote:
           'Glow Assistant is not a medical diagnosis. Seek professional care if symptoms are painful, swollen, infected, or persistent.',
+      fromFallback: true,
     );
   }
 
@@ -221,11 +228,14 @@ class AssistantReply {
   /// product must exist on the shelf, and eye concerns must not be answered
   /// with lip, makeup, or active-ingredient products.
   bool isSafeFor(String userMessage, List<BeautyProduct> products) {
-    final safeNames = products
-        .where((item) => item.resolvedStatus(DateTime.now()) == 'Safe')
+    final now = DateTime.now();
+    final offeredNames = products
+        .where((item) => item.isRecommendable(now))
         .map((item) => item.name.toLowerCase())
         .toSet();
-    if (!productNames.every((name) => safeNames.contains(name.toLowerCase()))) {
+    if (!productNames.every(
+      (name) => offeredNames.contains(name.toLowerCase()),
+    )) {
       return false;
     }
     if (!_isEyeConcern(userMessage.toLowerCase())) {
@@ -240,7 +250,7 @@ class AssistantReply {
     final allowedNames = products
         .where(
           (item) =>
-              item.resolvedStatus(DateTime.now()) == 'Safe' &&
+              item.isRecommendable(now) &&
               _isEyeCompatible(item, _productText(item)),
         )
         .map((item) => item.name.toLowerCase())

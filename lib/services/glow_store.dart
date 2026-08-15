@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants.dart';
 import '../models/app_data.dart';
 import '../models/app_user.dart';
+import '../models/assistant_chat_message.dart';
 import '../models/assistant_reply.dart';
 import '../models/beauty_product.dart';
 import '../models/eco_action.dart';
@@ -30,6 +31,20 @@ class GlowStore {
   static const _migrationKey = 'glowcycle_firestore_migrated';
 
   bool get _useFirebase => user.isFirebaseUser && FirebaseBootstrap.configured;
+
+  /// Explains, in debug builds, why an AI call was never attempted.
+  ///
+  /// Without this, "Firebase was unavailable so we skipped Gemini" and
+  /// "Gemini was called and failed" both surface as the same silent fallback.
+  void _logAiSkipped(String feature) {
+    if (!kDebugMode) {
+      return;
+    }
+    final reason = !FirebaseBootstrap.configured
+        ? 'Firebase did not initialise: ${FirebaseBootstrap.error ?? 'unknown error'}'
+        : 'signed in with the offline demo login, not Firebase Auth';
+    debugPrint('$feature skipped, no Gemini call made - $reason');
+  }
 
   String get _localProductsKey => '${_productsKey}_${user.uid}';
   String get _localActionsKey => '${_actionsKey}_${user.uid}';
@@ -188,6 +203,7 @@ class GlowStore {
         return ProductScanResult.fromOcrHeuristic(ocrText);
       }
     }
+    _logAiSkipped('Product scan');
     return ProductScanResult.fromOcrHeuristic(ocrText);
   }
 
@@ -219,7 +235,15 @@ class GlowStore {
       model: 'gemini-3.5-flash',
       generationConfig: GenerationConfig(
         temperature: 0,
-        maxOutputTokens: 900,
+        // A full INCI list runs to 40+ ingredients. The previous 900-token
+        // ceiling truncated the JSON mid-array, which threw during decode and
+        // silently dropped the whole scan to the regex fallback.
+        maxOutputTokens: 4096,
+        // Extraction is transcription, not reasoning. Minimal thinking keeps
+        // the token budget for output and cuts scan latency.
+        thinkingConfig: ThinkingConfig.withThinkingLevel(
+          ThinkingLevel.minimal,
+        ),
         responseMimeType: 'application/json',
         responseSchema: responseSchema,
       ),
@@ -270,18 +294,20 @@ ${ocrText.isEmpty ? '(No readable OCR text.)' : ocrText}
     );
   }
 
+  /// Answers a skincare question using the user's own shelf.
+  ///
+  /// [history] is the conversation so far, oldest first, so follow-up
+  /// questions keep their context. Gemini answers are validated by
+  /// [AssistantReply.isSafeFor] and replaced with the offline rule engine if
+  /// they name a product the user does not own.
   Future<AssistantReply> askAssistant({
     required String message,
     required List<BeautyProduct> products,
+    List<AssistantChatMessage> history = const [],
   }) async {
-    final activeProducts = products
-        .where(
-          (item) => ![
-            'Expired',
-            'Finished',
-            'Recycled',
-          ].contains(item.resolvedStatus(DateTime.now())),
-        )
+    final now = DateTime.now();
+    final offeredProducts = products
+        .where((item) => item.isRecommendable(now))
         .map((item) => item.toAssistantJson())
         .toList();
 
@@ -289,11 +315,19 @@ ${ocrText.isEmpty ? '(No readable OCR text.)' : ocrText}
       try {
         final reply = await _askGemini(
           message: message,
-          inventory: activeProducts,
+          inventory: offeredProducts,
+          history: history,
         );
-        return reply.isSafeFor(message, products)
-            ? reply
-            : AssistantReply.local(message, products);
+        if (reply.isSafeFor(message, products)) {
+          return reply;
+        }
+        if (kDebugMode) {
+          debugPrint(
+            'Gemini Assistant reply rejected by safety guard; '
+            'recommended ${reply.productNames}',
+          );
+        }
+        return AssistantReply.local(message, products);
       } catch (exception) {
         if (kDebugMode) {
           debugPrint('Gemini Assistant fallback: $exception');
@@ -301,12 +335,18 @@ ${ocrText.isEmpty ? '(No readable OCR text.)' : ocrText}
         return AssistantReply.local(message, products);
       }
     }
+    _logAiSkipped('Glow Assistant');
     return AssistantReply.local(message, products);
   }
+
+  /// Number of prior turns replayed to Gemini. Enough for a follow-up to make
+  /// sense without letting the prompt grow without bound.
+  static const _historyTurnLimit = 8;
 
   Future<AssistantReply> _askGemini({
     required String message,
     required List<Map<String, dynamic>> inventory,
+    required List<AssistantChatMessage> history,
   }) async {
     final responseSchema = Schema.object(
       properties: {
@@ -315,28 +355,20 @@ ${ocrText.isEmpty ? '(No readable OCR text.)' : ocrText}
         'safetyNote': Schema.string(),
       },
     );
-    final model = FirebaseAI.googleAI().generativeModel(
-      model: 'gemini-3.5-flash',
-      generationConfig: GenerationConfig(
-        temperature: 0.2,
-        maxOutputTokens: 500,
-        responseMimeType: 'application/json',
-        responseSchema: responseSchema,
-      ),
-    );
-    final prompt =
+    const systemInstruction =
         '''
 You are Glow Assistant, a cautious beauty inventory helper. Give practical,
-short skincare guidance based only on the user's Safe Shelf inventory below.
-
-User concern: ${jsonEncode(message)}
-Safe Shelf inventory JSON: ${jsonEncode(inventory)}
+short skincare guidance based only on the shelf inventory supplied with each
+question.
 
 Rules:
 - Reply with the required JSON only.
-- productNames must contain only exact product names from Safe Shelf that you
-  actively recommend. Never invent, rename, or recommend a product not listed.
-- Do not recommend expired, finished, recycled, or unknown products.
+- productNames must contain only exact product names from the supplied
+  inventory that you actively recommend. Never invent, rename, or recommend a
+  product that is not listed.
+- The inventory already excludes expired, finished, and recycled items, so
+  every listed product is usable. Prefer items whose status is "Use Soon":
+  helping the user finish those before they expire is the goal.
 - Give a simple routine with 2 to 4 clearly numbered steps when appropriate.
 - Do not diagnose, claim to treat disease, or make medical guarantees.
 - If symptoms are severe, painful, swollen, infected, involve vision changes,
@@ -348,9 +380,43 @@ Rules:
   guidance without naming a product the user does not own.
 - In message, do not mention a named product unless it also appears exactly in
   productNames. Keep the tone supportive and concise.
+- Earlier turns are provided for context. Resolve follow-up questions such as
+  "what about at night?" against what was already discussed.
 ''';
+    final model = FirebaseAI.googleAI().generativeModel(
+      model: 'gemini-3.5-flash',
+      systemInstruction: Content.system(systemInstruction),
+      generationConfig: GenerationConfig(
+        temperature: 0.2,
+        // Raised from 500: thinking tokens share this budget, and truncated
+        // output decodes as invalid JSON, which silently drops the answer to
+        // the offline rule engine.
+        maxOutputTokens: 2048,
+        thinkingConfig: ThinkingConfig.withThinkingLevel(ThinkingLevel.low),
+        responseMimeType: 'application/json',
+        responseSchema: responseSchema,
+      ),
+    );
+
+    final recentHistory = history.length > _historyTurnLimit
+        ? history.sublist(history.length - _historyTurnLimit)
+        : history;
+    final contents = <Content>[
+      for (final turn in recentHistory)
+        if (turn.role == 'user')
+          Content.text(turn.text)
+        else
+          Content.model([TextPart(turn.text)]),
+      // Inventory travels with the current question so the model always
+      // reasons over the shelf as it is right now, not as it was ten turns ago.
+      Content.text('''
+Shelf inventory JSON: ${jsonEncode(inventory)}
+
+User concern: ${jsonEncode(message)}
+'''),
+    ];
     final response = await model
-        .generateContent([Content.text(prompt)])
+        .generateContent(contents)
         .timeout(const Duration(seconds: 20));
     final raw = response.text;
     if (raw == null || raw.trim().isEmpty) {

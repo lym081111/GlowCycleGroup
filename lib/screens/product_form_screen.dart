@@ -39,6 +39,22 @@ class ProductFormScreen extends StatefulWidget {
 }
 
 class _ProductFormScreenState extends State<ProductFormScreen> {
+  /// Capture settings for every product photo.
+  ///
+  /// Ingredient lists, batch codes, and PAO marks are printed small, and both
+  /// ML Kit OCR and Gemini read the same file the user picked. Capturing at
+  /// 1200px/70% quality destroyed exactly that detail, so the scan is only as
+  /// good as these numbers.
+  static const _photoMaxWidth = 2048.0;
+  static const _photoQuality = 92;
+
+  /// Ceiling for a base64 photo stored inline on the product record.
+  ///
+  /// Only reached when the Firebase Storage upload failed, where the data URI
+  /// would otherwise be written into a Firestore document and breach the 1 MB
+  /// document limit.
+  static const _maxInlinePhotoChars = 700 * 1024;
+
   final _formKey = GlobalKey<FormState>();
   final _picker = ImagePicker();
   late final TextEditingController _nameController;
@@ -555,8 +571,8 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     try {
       final picked = await _picker.pickImage(
         source: source,
-        maxWidth: 1200,
-        imageQuality: 70,
+        maxWidth: _photoMaxWidth,
+        imageQuality: _photoQuality,
       );
       if (picked == null) {
         return;
@@ -589,9 +605,8 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       if (imagePath == null && sourceIfMissing != null) {
         final picked = await _picker.pickImage(
           source: sourceIfMissing,
-          // Small packaging text is often lost by aggressive compression.
-          maxWidth: 2048,
-          imageQuality: 92,
+          maxWidth: _photoMaxWidth,
+          imageQuality: _photoQuality,
         );
         if (picked == null) {
           return;
@@ -661,12 +676,11 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       }
       _scanConfidence = result.confidence;
       _scanSource = result.source;
-      final existingNotes = _notesController.text.trim();
-      final scanNote = 'AI scan text: ${result.rawTextPreview}';
-      _notesController.text = existingNotes.isEmpty
-          ? scanNote
-          : '$existingNotes\n\n$scanNote';
     });
+    // Raw OCR text is deliberately not written into Notes. Notes are sent to
+    // Glow Assistant via BeautyProduct.toAssistantJson(), so garbled scan text
+    // would become context the chatbot reasons over, and it stacked up with
+    // every rescan. The user reviews that text in the scan sheet instead.
   }
 
   Future<bool?> _showScanReview(ProductScanResult result) {
@@ -707,6 +721,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
               label: 'Confidence',
               value: '${(result.confidence * 100).round()}%',
             ),
+            DetailRow(label: 'Text read', value: result.rawTextPreview),
             if (result.confidence < 0.72) ...[
               const SizedBox(height: 8),
               const Text(
@@ -759,10 +774,23 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       final now = DateTime.now();
       final existing = widget.product;
       final id = existing?.id ?? now.microsecondsSinceEpoch.toString();
+      final inlinePhoto = _photoController.text.trim();
       final uploadedImagePath = await widget.store.uploadProductPhoto(
         productId: id,
-        dataUri: _photoController.text.trim(),
+        dataUri: inlinePhoto,
       );
+      // Scan-quality captures produce large data URIs. When the Storage upload
+      // gave us no URL, only keep the photo inline while it is small enough to
+      // fit inside a Firestore document.
+      final photoDropped =
+          uploadedImagePath.isEmpty &&
+          inlinePhoto.length > _maxInlinePhotoChars;
+      if (photoDropped) {
+        _showFormMessage(
+          'Photo was too large to store offline, so it was not saved. '
+          'Product details were kept.',
+        );
+      }
       final product = BeautyProduct(
         id: id,
         name: _nameController.text.trim(),
@@ -772,9 +800,9 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
         openingDate: _openingDate,
         expiryMonths: int.parse(_expiryController.text.trim()),
         status: _status,
-        imagePath: uploadedImagePath.isEmpty
-            ? _photoController.text.trim()
-            : uploadedImagePath,
+        imagePath: uploadedImagePath.isNotEmpty
+            ? uploadedImagePath
+            : (photoDropped ? '' : inlinePhoto),
         notes: _notesController.text.trim(),
         ingredients: parseIngredients(_ingredientsController.text),
         manufactureDate: _manufactureDate,

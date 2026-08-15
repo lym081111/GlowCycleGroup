@@ -79,6 +79,20 @@ class BeautyProduct {
     return 'Safe';
   }
 
+  /// Whether Glow Assistant may recommend this product.
+  ///
+  /// Anything still usable qualifies, including items expiring soon: nudging
+  /// the user to finish those first is the point of the app. Only expired,
+  /// finished, and recycled items are excluded.
+  ///
+  /// This is the single definition shared by the prompt that builds the
+  /// inventory and the guard that validates the reply, so the two can never
+  /// disagree about what was on offer.
+  bool isRecommendable(DateTime now) {
+    const excluded = {'Expired', 'Finished', 'Recycled'};
+    return !excluded.contains(resolvedStatus(now));
+  }
+
   BeautyProduct copyWith({String? status, DateTime? updatedAt}) {
     return BeautyProduct(
       id: id,
