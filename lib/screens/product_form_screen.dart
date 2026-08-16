@@ -62,6 +62,12 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   /// sensible token budget.
   static const _maxScanPhotos = 4;
 
+  /// Common Period After Opening durations, in months.
+  ///
+  /// Laid out as one equal-width row, so this list is what decides whether
+  /// the shortcuts still fit across the form.
+  static const _paoShortcuts = [3, 6, 12, 18, 24];
+
   final _formKey = GlobalKey<FormState>();
   final _picker = ImagePicker();
   late final TextEditingController _nameController;
@@ -433,31 +439,48 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                  Row(
                     children: [
-                      for (final months in [3, 6, 12, 18, 24])
-                        ChoiceChip(
-                          selected: selectedExpiry == months,
-                          label: Text('${months}M'),
-                          onSelected: (selected) {
-                            if (selected) {
-                              setState(
-                                () =>
-                                    _expiryController.text = months.toString(),
-                              );
-                            }
-                          },
-                          selectedColor: primaryContainer,
-                          backgroundColor: surfaceLow,
-                          labelStyle: TextStyle(
-                            color: selectedExpiry == months
-                                ? primary
-                                : ink.withValues(alpha: 0.7),
-                            fontWeight: FontWeight.w900,
+                      for (var i = 0; i < _paoShortcuts.length; i++) ...[
+                        if (i > 0) const SizedBox(width: 6),
+                        Expanded(
+                          child: ChoiceChip(
+                            selected: selectedExpiry == _paoShortcuts[i],
+                            // The default checkmark widens the selected chip
+                            // enough to wrap the row onto a second line, so
+                            // selection is carried by colour alone.
+                            showCheckmark: false,
+                            label: SizedBox(
+                              width: double.infinity,
+                              child: Text(
+                                '${_paoShortcuts[i]}M',
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                            labelPadding: EdgeInsets.zero,
+                            padding: const EdgeInsets.symmetric(vertical: 9),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            onSelected: (selected) {
+                              if (selected) {
+                                setState(
+                                  () => _expiryController.text =
+                                      _paoShortcuts[i].toString(),
+                                );
+                              }
+                            },
+                            selectedColor: primaryContainer,
+                            backgroundColor: surfaceLow,
+                            labelStyle: TextStyle(
+                              color: selectedExpiry == _paoShortcuts[i]
+                                  ? primary
+                                  : ink.withValues(alpha: 0.7),
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
                         ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 10),
