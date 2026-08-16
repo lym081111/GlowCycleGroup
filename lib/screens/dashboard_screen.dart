@@ -85,15 +85,6 @@ class DashboardScreen extends StatelessWidget {
               onTap: onAddTap,
             ),
             const SizedBox(height: 8),
-            // Was "Scan Barcode", which nothing implemented: it just opened
-            // the manual form. Points at the AI scan the app actually has.
-            QuickActionButton(
-              icon: Icons.document_scanner_outlined,
-              label: 'Scan Product with AI',
-              color: primary,
-              onTap: () => onNavigate(2),
-            ),
-            const SizedBox(height: 8),
             QuickActionButton(
               icon: Icons.eco_outlined,
               label: 'Log Empty Container',
