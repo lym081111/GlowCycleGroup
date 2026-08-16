@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/recycle_lookup.dart';
+import '../models/recycle_point.dart';
 import '../services/recycle_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/info_widgets.dart';
@@ -23,6 +25,26 @@ class _RecycleScreenState extends State<RecycleScreen> {
   void initState() {
     super.initState();
     _search();
+  }
+
+  /// Opens the point in Google Maps, or whatever handles map links.
+  ///
+  /// Coordinates are used rather than the address text, because most OSM
+  /// entries here carry no address and a name alone would not resolve.
+  Future<void> _openInMaps(RecyclePoint point) async {
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1'
+      '&query=${point.latitude},${point.longitude}',
+    );
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No app on this device can open map links.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   /// Runs the lookup and reports the outcome.
@@ -161,6 +183,18 @@ class _RecycleScreenState extends State<RecycleScreen> {
                           icon: Icons.social_distance,
                           text:
                               '${point.distanceKm.toStringAsFixed(1)} km from ${lookup.originLabel}',
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () => _openInMaps(point),
+                            icon: const Icon(
+                              Icons.directions_outlined,
+                              size: 18,
+                            ),
+                            label: const Text('Open in Google Maps'),
+                          ),
                         ),
                       ],
                     ),
