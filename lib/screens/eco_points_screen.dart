@@ -240,8 +240,9 @@ class _WasteAvoidanceTile extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             hasData
-                ? '${stats.finished + stats.recycled} of ${stats.settled} finished products were used up or recycled. '
-                      '${stats.expired} expired.'
+                ? 'You used up or recycled ${stats.finished + stats.recycled} of '
+                      'the ${stats.settled} products that reached the end of their '
+                      'life. ${stats.expired} expired.'
                 : 'Finish or recycle a product to start tracking how much waste you avoid.',
             style: TextStyle(
               color: ink.withValues(alpha: 0.64),
