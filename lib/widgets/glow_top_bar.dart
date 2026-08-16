@@ -8,14 +8,12 @@ class GlowTopBar extends StatelessWidget {
   const GlowTopBar({
     super.key,
     required this.user,
-    required this.onSearch,
     required this.onNotifications,
     required this.onRecycleMap,
     required this.onSignOut,
   });
 
   final AppUser user;
-  final VoidCallback onSearch;
   final VoidCallback onNotifications;
   final VoidCallback onRecycleMap;
   final Future<void> Function() onSignOut;
@@ -61,11 +59,6 @@ class GlowTopBar extends StatelessWidget {
                 letterSpacing: 0,
               ),
             ),
-          ),
-          IconButton(
-            tooltip: 'Search inventory',
-            onPressed: onSearch,
-            icon: const Icon(Icons.search, color: Color(0xFF424941)),
           ),
           IconButton(
             tooltip: 'Eco impact',

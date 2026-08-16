@@ -368,7 +368,6 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
                 if (_selectedIndex != 2)
                   GlowTopBar(
                     user: widget.user,
-                    onSearch: () => setState(() => _selectedIndex = 1),
                     onNotifications: _openEcoPoints,
                     onRecycleMap: _openRecycleMap,
                     onSignOut: widget.onSignOut,
