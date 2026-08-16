@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/app_user.dart';
 import '../models/beauty_product.dart';
@@ -8,6 +9,7 @@ import '../theme/app_colors.dart';
 import '../widgets/glow_bottom_nav.dart';
 import '../widgets/glow_top_bar.dart';
 import 'dashboard_screen.dart';
+import 'eco_points_screen.dart';
 import 'glow_assistant_screen.dart';
 import 'glow_saver_screen.dart';
 import 'inventory_screen.dart';
@@ -232,29 +234,72 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
       ),
     ];
 
-    return Scaffold(
-      body: Container(
-        color: surface,
-        child: SafeArea(
-          child: Column(
-            children: [
-              if (_selectedIndex != 2)
-                GlowTopBar(
-                  user: widget.user,
-                  onSearch: () => setState(() => _selectedIndex = 1),
-                  onNotifications: () => setState(() => _selectedIndex = 4),
-                  onSignOut: widget.onSignOut,
-                ),
-              Expanded(child: screens[_selectedIndex]),
-            ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) {
+          return;
+        }
+        // Back from an inner tab returns to Home first, so leaving the app is
+        // always a deliberate second press rather than a surprise.
+        if (_selectedIndex != 0) {
+          setState(() => _selectedIndex = 0);
+          return;
+        }
+        if (await _confirmExit()) {
+          await SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        body: Container(
+          color: surface,
+          child: SafeArea(
+            child: Column(
+              children: [
+                if (_selectedIndex != 2)
+                  GlowTopBar(
+                    user: widget.user,
+                    onSearch: () => setState(() => _selectedIndex = 1),
+                    onNotifications: _openEcoPoints,
+                    onSignOut: widget.onSignOut,
+                  ),
+                Expanded(child: screens[_selectedIndex]),
+              ],
+            ),
           ),
         ),
-      ),
-      bottomNavigationBar: GlowBottomNav(
-        selectedIndex: _selectedIndex,
-        onSelected: (value) => setState(() => _selectedIndex = value),
+        bottomNavigationBar: GlowBottomNav(
+          selectedIndex: _selectedIndex,
+          onSelected: (value) => setState(() => _selectedIndex = value),
+        ),
       ),
     );
+  }
+
+  /// Confirms leaving the app, so a stray back press does not drop the user
+  /// out mid-task.
+  Future<bool> _confirmExit() async {
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Leave GlowCycle?'),
+        content: const Text(
+          'Your shelf and eco actions are already saved. You can pick up '
+          'where you left off next time.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Stay'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+    return leave ?? false;
   }
 
   Future<void> _openProductForm({BeautyProduct? product}) async {
@@ -293,6 +338,20 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
           onDelete: () => _deleteProduct(latest.id),
           onFinished: () => _markFinished(latest),
           onRecycled: () => _markRecycled(latest),
+        ),
+      ),
+    );
+  }
+
+  /// Step six of the proposal's user journey: reflect on points, badges, and
+  /// recent sustainable actions. Reached from the top bar's eco impact icon.
+  Future<void> _openEcoPoints() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EcoPointsScreen(
+          products: _products,
+          actions: _actions,
+          onNoBuyChallenge: _completeNoBuyChallenge,
         ),
       ),
     );

@@ -143,9 +143,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
           scrollDirection: Axis.horizontal,
           child: Row(
             children: [
+              // Every value resolvedStatus can return needs a chip, or those
+              // products match no filter but "All" and look missing.
               for (final status in [
                 'All',
                 'Safe',
+                'Unopened',
                 'Use Soon',
                 'Expired',
                 'Finished',

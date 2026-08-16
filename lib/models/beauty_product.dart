@@ -60,6 +60,12 @@ class BeautyProduct {
     return expiry.difference(today).inDays;
   }
 
+  /// How many days before expiry a product starts warning the user.
+  ///
+  /// The proposal specifies Safe as more than 60 days remaining and Use Soon
+  /// as 1-60 days, items expiring today included.
+  static const useSoonWindowDays = 60;
+
   /// Combines the stored lifecycle state with the calendar to produce the
   /// status shown in the UI.
   String resolvedStatus(DateTime now) {
@@ -70,7 +76,7 @@ class BeautyProduct {
     if (days < 0) {
       return 'Expired';
     }
-    if (days <= 30) {
+    if (days <= useSoonWindowDays) {
       return 'Use Soon';
     }
     if (status == 'Unopened') {
