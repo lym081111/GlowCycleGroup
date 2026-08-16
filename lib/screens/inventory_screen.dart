@@ -40,7 +40,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }).toList()..sort((a, b) => a.expiryDate.compareTo(b.expiryDate));
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
       children: [
         const AppHeader(
           title: 'My Beauty Shelf',

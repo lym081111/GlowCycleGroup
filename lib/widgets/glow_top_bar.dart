@@ -70,10 +70,9 @@ class GlowTopBar extends StatelessWidget {
           IconButton(
             tooltip: 'Eco impact',
             onPressed: onNotifications,
-            icon: const Icon(
-              Icons.notifications_outlined,
-              color: Color(0xFF424941),
-            ),
+            // Matches the star on the eco points banner: a bell suggested
+            // notifications, which this button has never opened.
+            icon: const Icon(Icons.auto_awesome, color: Color(0xFF424941)),
           ),
           IconButton(
             tooltip: 'Nearby recycling',

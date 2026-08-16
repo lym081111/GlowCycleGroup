@@ -17,7 +17,9 @@ class GlowBottomNav extends StatelessWidget {
     (Icons.home_outlined, Icons.home, 'Home'),
     (Icons.inventory_2_outlined, Icons.inventory_2, 'Shelf'),
     (Icons.document_scanner_outlined, Icons.document_scanner, 'Scan'),
-    (Icons.auto_awesome_outlined, Icons.auto_awesome, 'Assistant'),
+    // A speech bubble with a spark reads as "something that answers you",
+    // and keeps this distinct from the bare star now used for eco points.
+    (Icons.assistant_outlined, Icons.assistant, 'Assistant'),
     (Icons.savings_outlined, Icons.savings, 'Saver'),
   ];
 

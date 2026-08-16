@@ -16,24 +16,48 @@ class RecycleScreen extends StatefulWidget {
 }
 
 class _RecycleScreenState extends State<RecycleScreen> {
-  late Future<RecycleLookup> _lookup;
+  RecycleLookup? _lookup;
+  var _searching = false;
 
   @override
   void initState() {
     super.initState();
-    _lookup = _search();
+    _search();
   }
 
-  Future<RecycleLookup> _search() async {
+  /// Runs the lookup and reports the outcome.
+  ///
+  /// A repeat search usually returns the same places, so without [announce]
+  /// the refresh button looked inert even though it had worked.
+  Future<void> _search({bool announce = false}) async {
+    if (_searching) {
+      return;
+    }
+    setState(() => _searching = true);
     final position = await RecycleService.currentPosition();
-    return RecycleService.fetchRecyclePoints(
+    final result = await RecycleService.fetchRecyclePoints(
       latitude: position?.latitude,
       longitude: position?.longitude,
     );
-  }
-
-  void _retry() {
-    setState(() => _lookup = _search());
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _lookup = result;
+      _searching = false;
+    });
+    if (announce) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.errorNote ??
+                'Search complete: ${result.points.length} point(s) '
+                    'within ${result.radiusKm} km.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   @override
@@ -43,16 +67,22 @@ class _RecycleScreenState extends State<RecycleScreen> {
         title: const Text('Nearby recycling'),
         actions: [
           IconButton(
-            tooltip: 'Search again',
-            onPressed: _retry,
-            icon: const Icon(Icons.refresh),
+            tooltip: _searching ? 'Searching...' : 'Search again',
+            onPressed: _searching ? null : () => _search(announce: true),
+            icon: _searching
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
           ),
         ],
       ),
-      body: FutureBuilder<RecycleLookup>(
-        future: _lookup,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+      body: Builder(
+        builder: (context) {
+          final lookup = _lookup;
+          if (lookup == null) {
             return const Center(
               child: Padding(
                 padding: EdgeInsets.all(34),
@@ -66,10 +96,6 @@ class _RecycleScreenState extends State<RecycleScreen> {
                 ),
               ),
             );
-          }
-          final lookup = snapshot.data;
-          if (lookup == null) {
-            return const Center(child: Text('Could not search right now.'));
           }
           return ListView(
             padding: EdgeInsets.fromLTRB(

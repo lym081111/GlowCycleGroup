@@ -50,7 +50,7 @@ class DashboardScreen extends StatelessWidget {
         .toList();
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
       children: [
         DashboardWelcomeCard(stats: stats),
         const SizedBox(height: 20),
