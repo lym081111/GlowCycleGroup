@@ -1,77 +1,152 @@
 # GlowCycle
 
-GlowCycle is a smart beauty inventory and waste reduction mobile application for the UCCD3223 Mobile Application Development group assignment.
+GlowCycle is a smart beauty inventory and waste reduction mobile application for
+the UCCD3223 Mobile Application Development group assignment.
 
 Slogan: **Track beauty. Reduce waste. Glow responsibly.**
 
 ## Assignment Coverage
 
-- Custom launcher icon with beauty bottle and circular economy arrow.
-- Local mobile storage using `shared_preferences` for product inventory and eco action history.
-- External endpoint integration using OpenStreetMap Overpass API for recycling point data.
-- CRUD inventory flow: add, view, edit, delete beauty products.
-- Expiry calculation from opening date and expiry duration.
-- Product status classification: Unopened, Safe, Use Soon, Expired, Finished, Recycled.
-- Duplicate purchase reminder through Wishlist Check.
-- Eco points and achievement badges.
-- Firebase Authentication and Cloud Firestore for each signed-in user's data.
-- On-device ML Kit OCR and Firebase AI Logic with Gemini for product-package
-  extraction and inventory-aware skincare guidance. Product scans fall back to
-  local OCR when Gemini is unavailable.
+Minimum requirements:
+
+- **Custom launcher icon** — beauty bottle with a circular economy arrow,
+  generated for Android through `flutter_launcher_icons`.
+- **Stores, updates and retrieves data on the device** — every shelf and eco
+  action is written to `shared_preferences`, which also serves as the offline
+  fallback when Cloud Firestore is unreachable.
+- **External endpoint** — recycling locations come live from the OpenStreetMap
+  Overpass API, searched around the device's GPS position.
+
+Beyond the minimum:
+
+- Firebase Authentication, Cloud Firestore, and Firebase Storage, scoped per
+  user by security rules in `firestore.rules`.
+- Gemini 3.5 Flash through Firebase AI Logic for product extraction and
+  skincare guidance, with no API key shipped in the app.
+- On-device ML Kit OCR, so packaging text is read at the edge before anything
+  reaches the network.
+
+## Main Features
+
+**Beauty shelf** — full create, read, update, and delete over products, each
+with category, purchase and opening dates, PAO duration, status, notes, price,
+ingredients, and photos.
+
+**Expiry intelligence** — expiry is derived from the opening date plus the
+Period After Opening, and products resolve to Safe, Unopened, Use Soon,
+Expired, Finished, or Recycled. A product is flagged Use Soon within 60 days of
+expiry.
+
+**AI scan** — photograph the front of a package and the ingredient panel on the
+back. ML Kit reads both on-device, then Gemini merges them into one record:
+name, brand, category, ingredients, dates, PAO, and batch number. Every result
+is shown for review before it touches the form, and the sheet says whether
+Gemini or on-device OCR produced it.
+
+**Glow Assistant** — skincare guidance grounded in the user's own shelf.
+Answers are checked against the inventory before display, never recommend
+expired or finished products, refuse unsafe suggestions for eye concerns, and
+fall back to an offline rule engine that labels itself as such.
+
+**Duplicate purchase check** — counts what the user already owns in a category
+before they buy another one.
+
+**Recycle points** — live OpenStreetMap data around the device's location. The
+search widens from 25 km to 100 km to 400 km when nothing is mapped nearby, and
+each point links out to Google Maps. There is deliberately no mock data: an area
+with nothing mapped is reported as a finding, and the screen invites the user to
+add real locations to OpenStreetMap.
+
+**Eco points** — awarded for finishing products, recycling containers, skipping
+duplicate purchases, and completing a seven day no-buy challenge. Awards are
+earned once per product, the duplicate skip is limited to one per category per
+day and is reversed if the user buys into that category anyway, and the
+challenge measures real elapsed days. A waste-avoidance rate derived from
+product outcomes sits alongside the points, and unlike them it can fall.
+
+## Project Structure
+
+```
+lib/
+  main.dart              entry point and root widget
+  core/                  shared constants and parsing helpers
+  theme/                 colour palette, Material 3 theme, status styles
+  models/                BeautyProduct, EcoAction, RecyclePoint, ProductScanResult,
+                         AssistantReply, InventoryStats, BadgeRule, NoBuyChallenge
+  services/              FirebaseBootstrap, GlowStore, ProductScanService,
+                         RecycleService
+  widgets/               reusable cards, chips, form fields, navigation
+  screens/               one file per screen
+firestore.rules          per-user security rules
+```
 
 ## Technologies Used
 
-- Flutter 3.44.4
-- Dart 3.12.2
-- `shared_preferences` for local storage
-- `http` for REST API integration
-- `intl` for date formatting
-- `flutter_launcher_icons` for launcher icon generation
-- Firebase Authentication, Cloud Firestore, and Firebase AI Logic (Gemini)
+- Flutter 3.44 and Dart 3.12, Material 3
+- `firebase_core`, `firebase_auth`, `cloud_firestore`, `firebase_storage`,
+  `firebase_app_check`
+- `firebase_ai` for Gemini 3.5 Flash
 - `google_mlkit_text_recognition` for on-device OCR
+- `geolocator` for the recycle point search
+- `url_launcher` to open a location in Google Maps
+- `http` for the Overpass REST API
+- `shared_preferences`, `intl`, `image_picker`, `flutter_launcher_icons`
 
-## Main Screens
-
-- Splash screen
-- Home dashboard
-- Add product
-- Inventory
-- Product detail
-- Wishlist check
-- Recycle points
-- Eco points
-
-## How to Run
-
-From this project folder:
+## Running the Project
 
 ```bash
 flutter pub get
 flutter run
 ```
 
-For Chrome demo:
+### Firebase setup
+
+`lib/firebase_options.dart`, `android/app/google-services.json`, and
+`firebase.json` are committed with the group's shared project. If you point the
+app at your own Firebase project, keep those changes out of your commits:
 
 ```bash
-flutter run -d chrome
+git update-index --skip-worktree android/app/google-services.json \
+  lib/firebase_options.dart firebase.json
+flutterfire configure
 ```
 
-For Android emulator or phone:
+Your project needs Email/Password authentication, a Cloud Firestore database,
+and Firebase AI Logic enabled with the Gemini Developer API. Deploy the rules
+with:
 
 ```bash
-flutter devices
-flutter run -d <device-id>
+firebase deploy --only firestore:rules
 ```
 
-## Group Contribution Template
+### App Check on debug builds
 
-| Member | Responsibility |
-|---|---|
-| Member 1 | Documentation and project coordination |
-| Member 2 | UI/UX and frontend |
-| Member 3 | Local storage and inventory module |
-| Member 4 | External API, recycle points, eco points |
+Debug builds attest through the App Check debug provider, which mints a token
+per installation. Until that token is allow-listed, Firestore and Gemini calls
+are rejected. Find it in the launch log:
 
-## Notes
+```
+DebugAppCheckProvider: Enter this debug secret into the allow list ...
+```
 
-The Recycle Points screen first tries to fetch nearby recycling locations from OpenStreetMap Overpass API using a Kampar/UTAR reference location. If the endpoint is unavailable during a demo, the app falls back to curated mock recycling points so the feature remains demonstrable.
+and add it under App Check → Apps → Manage debug tokens. The token changes
+whenever the app is reinstalled or its data cleared.
+
+## Notes on Live Data
+
+OpenStreetMap coverage for `amenity=recycling` varies sharply across Malaysia.
+Around Ipoh the search returns points within a few kilometres; other areas
+return nothing within 25 km, which is why the search widens and why an empty
+result is presented as a finding about open data rather than hidden behind
+invented locations.
+
+## Group Contribution
+
+| Member | Student ID | Responsibility |
+|---|---|---|
+| Lam Chee Sin | 2106461 | |
+| Lee Wen Qi | 2400409 | |
+| Liew Yi Mei | 2205280 | |
+| Wong Hao Yin | 2206517 | |
+
+Practical group P1, Group 4. Tutor: Mr. Tan Chiang Kang.
