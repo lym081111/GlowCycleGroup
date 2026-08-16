@@ -1,41 +1,35 @@
 import 'recycle_point.dart';
 
-/// The outcome of a recycle-point search, including where it searched from
-/// and whether the results are live.
+/// The outcome of a recycle-point search.
 ///
-/// The screen previously could not tell live OpenStreetMap data from the
-/// curated fallback, so it always claimed the endpoint was unavailable even
-/// when the real cause was an empty result set.
+/// Results are always live OpenStreetMap data. There is deliberately no
+/// curated fallback: an area with nothing mapped is a real finding about open
+/// data coverage, and inventing places to fill the screen would misrepresent
+/// both the service and the area.
 class RecycleLookup {
   const RecycleLookup({
     required this.points,
-    required this.isLive,
     required this.originLabel,
-    this.note,
+    required this.radiusKm,
+    this.errorNote,
   });
 
-  /// Curated records used when the search returns nothing usable.
-  factory RecycleLookup.fallback({
-    required List<RecyclePoint> points,
-    required String originLabel,
-    required String note,
-  }) {
-    return RecycleLookup(
-      points: points,
-      isLive: false,
-      originLabel: originLabel,
-      note: note,
-    );
-  }
-
+  /// Recycling points found, nearest first. Empty when the area has none
+  /// mapped, or when the search could not complete.
   final List<RecyclePoint> points;
-
-  /// True when [points] came from OpenStreetMap rather than the fallback.
-  final bool isLive;
 
   /// Human-readable description of the search centre.
   final String originLabel;
 
-  /// Why the fallback was used, when it was.
-  final String? note;
+  /// How far out the search reached.
+  final int radiusKm;
+
+  /// Set only when the service could not be reached, which is different from
+  /// the service answering with nothing.
+  final String? errorNote;
+
+  bool get failed => errorNote != null;
+
+  /// True when the search succeeded and the area genuinely has nothing mapped.
+  bool get isUnmapped => !failed && points.isEmpty;
 }

@@ -15,6 +15,7 @@ import 'eco_points_screen.dart';
 import 'glow_assistant_screen.dart';
 import 'glow_saver_screen.dart';
 import 'inventory_screen.dart';
+import 'log_container_screen.dart';
 import 'product_detail_screen.dart';
 import 'product_form_screen.dart';
 import 'recycle_screen.dart';
@@ -321,6 +322,7 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
         actions: _actions,
         onAddTap: () => _openProductForm(),
         onWishlistTap: _openWishlistCheck,
+        onLogContainer: _openLogContainer,
         onNavigate: (index) => setState(() => _selectedIndex = index),
       ),
       InventoryScreen(products: _products, onProductTap: _openProductDetail),
@@ -460,6 +462,21 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
           actions: _actions,
           onStartNoBuyChallenge: _startNoBuyChallenge,
           onClaimNoBuyChallenge: _claimNoBuyChallenge,
+        ),
+      ),
+    );
+  }
+
+  /// Steps four and five of the proposal's journey, finishing a product and
+  /// recycling its container, without digging through the shelf.
+  Future<void> _openLogContainer() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => LogContainerScreen(
+          products: _products,
+          actions: _actions,
+          onFinished: _markFinished,
+          onRecycled: _markRecycled,
         ),
       ),
     );

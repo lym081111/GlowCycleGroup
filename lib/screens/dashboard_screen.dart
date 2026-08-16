@@ -19,6 +19,7 @@ class DashboardScreen extends StatelessWidget {
     required this.actions,
     required this.onAddTap,
     required this.onWishlistTap,
+    required this.onLogContainer,
     required this.onNavigate,
   });
 
@@ -26,6 +27,7 @@ class DashboardScreen extends StatelessWidget {
   final List<EcoAction> actions;
   final VoidCallback onAddTap;
   final VoidCallback onWishlistTap;
+  final VoidCallback onLogContainer;
   final ValueChanged<int> onNavigate;
 
   @override
@@ -98,7 +100,7 @@ class DashboardScreen extends StatelessWidget {
               icon: Icons.eco_outlined,
               label: 'Log Empty Container',
               color: tertiary,
-              onTap: () => onNavigate(4),
+              onTap: onLogContainer,
             ),
           ],
         ),

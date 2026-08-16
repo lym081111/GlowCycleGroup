@@ -86,11 +86,11 @@ out center 12;
           )
           .timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
-        return RecycleLookup.fallback(
-          points: fallbackPoints,
+        return RecycleLookup(
+          points: const [],
           originLabel: origin,
-          note:
-              'OpenStreetMap replied ${response.statusCode}. Showing demo points.',
+          radiusKm: radiusKm,
+          errorNote: 'OpenStreetMap replied ${response.statusCode}.',
         );
       }
       final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -124,30 +124,22 @@ out center 12;
         );
       }).toList()..sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
 
-      if (points.isEmpty) {
-        // An empty result is not a failure: the service answered, this area
-        // simply has nothing mapped. Saying so beats blaming the endpoint.
-        return RecycleLookup.fallback(
-          points: fallbackPoints,
-          originLabel: origin,
-          note:
-              'OpenStreetMap has no recycling point mapped within $radiusKm km '
-              'of $origin. Showing demo points instead.',
-        );
-      }
+      // An empty result is reported as it stands. The service answered; this
+      // area simply has nothing mapped, which is worth showing honestly.
       return RecycleLookup(
         points: points.take(8).toList(),
-        isLive: true,
         originLabel: origin,
+        radiusKm: radiusKm,
       );
     } catch (exception) {
       if (kDebugMode) {
         debugPrint('Overpass lookup failed: $exception');
       }
-      return RecycleLookup.fallback(
-        points: fallbackPoints,
+      return RecycleLookup(
+        points: const [],
         originLabel: origin,
-        note: 'Could not reach OpenStreetMap. Showing demo points.',
+        radiusKm: radiusKm,
+        errorNote: 'Could not reach OpenStreetMap.',
       );
     }
   }
@@ -166,41 +158,6 @@ out center 12;
     }
     return accepted.join(', ');
   }
-
-  /// Curated records that keep the screen demonstrable when the live search
-  /// returns nothing.
-  static final fallbackPoints = [
-    RecyclePoint(
-      id: 'rp001',
-      name: 'UTAR Eco Collection Corner',
-      address: 'UTAR Campus Main Lobby, Kampar',
-      acceptedItems: 'Plastic bottles, glass jars, cosmetic containers',
-      openingHours: 'Mon-Fri, 9:00 AM - 5:00 PM',
-      latitude: 4.3380,
-      longitude: 101.1430,
-      distanceKm: 0,
-    ),
-    RecyclePoint(
-      id: 'rp002',
-      name: 'Kampar Recycling Centre',
-      address: 'Kampar Town Area',
-      acceptedItems: 'Plastic packaging, paper, glass',
-      openingHours: 'Daily, 10:00 AM - 6:00 PM',
-      latitude: 4.3120,
-      longitude: 101.1530,
-      distanceKm: distanceKm(utarLat, utarLng, 4.3120, 101.1530),
-    ),
-    RecyclePoint(
-      id: 'rp003',
-      name: 'Eco Beauty Drop-Off Point',
-      address: 'Beauty retail counter, Kampar',
-      acceptedItems: 'Empty beauty bottles, compact cases, clean jars',
-      openingHours: 'Sat-Sun, 11:00 AM - 7:00 PM',
-      latitude: 4.3290,
-      longitude: 101.1480,
-      distanceKm: distanceKm(utarLat, utarLng, 4.3290, 101.1480),
-    ),
-  ];
 
   /// Great-circle distance between two coordinates, in kilometres.
   static double distanceKm(double lat1, double lon1, double lat2, double lon2) {

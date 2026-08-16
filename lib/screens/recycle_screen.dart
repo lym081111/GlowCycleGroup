@@ -82,6 +82,7 @@ class _RecycleScreenState extends State<RecycleScreen> {
               const SizedBox(height: 14),
               _SourceBanner(lookup: lookup),
               const SizedBox(height: 16),
+              if (lookup.isUnmapped) const _UnmappedFinding(),
               ...lookup.points.map(
                 (point) => Card(
                   margin: const EdgeInsets.only(bottom: 12),
@@ -143,8 +144,7 @@ class _RecycleScreenState extends State<RecycleScreen> {
   }
 }
 
-/// States plainly whether the list is live OpenStreetMap data or the curated
-/// fallback, and why.
+/// Says where the search ran and what it returned.
 class _SourceBanner extends StatelessWidget {
   const _SourceBanner({required this.lookup});
 
@@ -152,19 +152,20 @@ class _SourceBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final live = lookup.isLive;
+    final ok = !lookup.failed;
+    final count = lookup.points.length;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: live ? mint : blush,
+        color: ok ? mint : blush,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            live ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
-            color: live ? primary : brandPink,
+            ok ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
+            color: ok ? primary : brandPink,
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -172,7 +173,7 @@ class _SourceBanner extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  live ? 'Live OpenStreetMap data' : 'Demo data',
+                  ok ? 'Live OpenStreetMap data' : 'Search unavailable',
                   style: const TextStyle(
                     color: ink,
                     fontWeight: FontWeight.w900,
@@ -180,14 +181,82 @@ class _SourceBanner extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  lookup.note ??
-                      'Searched around ${lookup.originLabel} through the Overpass API.',
+                  lookup.errorNote ??
+                      '$count point(s) found within ${lookup.radiusKm} km of '
+                          '${lookup.originLabel}, via the Overpass API.',
                   style: TextStyle(
                     color: ink.withValues(alpha: 0.72),
                     height: 1.3,
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Reports an empty search as the finding it is.
+///
+/// Nothing mapped nearby is a fact about open-data coverage, not a failure of
+/// the app, and inventing places to fill the screen would hide it.
+class _UnmappedFinding extends StatelessWidget {
+  const _UnmappedFinding();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ink.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.travel_explore_outlined, color: secondary),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Nothing mapped here yet',
+                  style: TextStyle(
+                    color: ink,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 17,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'The search worked; this area simply has no recycling point '
+            'recorded in OpenStreetMap. Coverage across Malaysia is uneven and '
+            'concentrated in the larger cities, so rural areas often return '
+            'nothing at all.',
+            style: TextStyle(color: ink.withValues(alpha: 0.74), height: 1.35),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: mint,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              'You can change this: adding a real drop-off point to '
+              'openstreetmap.org puts it on the map for everyone, including '
+              'this app.',
+              style: TextStyle(
+                color: ink.withValues(alpha: 0.8),
+                height: 1.3,
+                fontSize: 13,
+              ),
             ),
           ),
         ],
