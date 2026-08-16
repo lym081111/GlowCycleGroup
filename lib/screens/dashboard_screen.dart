@@ -51,7 +51,7 @@ class DashboardScreen extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
       children: [
         DashboardWelcomeCard(stats: stats),
-        const SizedBox(height: 28),
+        const SizedBox(height: 20),
         SectionHeading(
           title: 'Expiring Soon',
           actionLabel: 'View All',
@@ -59,7 +59,9 @@ class DashboardScreen extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         SizedBox(
-          height: 244,
+          // Sized to the compact card so the quick actions below stay on
+          // screen without scrolling.
+          height: 168,
           child: expiringProducts.isEmpty
               ? const CalmShelfCard()
               : ListView.separated(
@@ -72,7 +74,7 @@ class DashboardScreen extends StatelessWidget {
                   },
                 ),
         ),
-        const SizedBox(height: 28),
+        const SizedBox(height: 20),
         const SectionHeading(title: 'Quick Actions'),
         const SizedBox(height: 12),
         Column(
@@ -100,7 +102,7 @@ class DashboardScreen extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 28),
+        const SizedBox(height: 20),
         const SectionHeading(title: 'Recent Activity'),
         const SizedBox(height: 12),
         ActivityPanel(actions: actions, activeProducts: activeProducts),

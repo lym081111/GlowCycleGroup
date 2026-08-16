@@ -188,7 +188,7 @@ class DashboardExpiryCard extends StatelessWidget {
         : statusColor(status);
 
     return Container(
-      width: 200,
+      width: 158,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -206,7 +206,7 @@ class DashboardExpiryCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            height: 130,
+            height: 88,
             width: double.infinity,
             child: Stack(
               fit: StackFit.expand,
@@ -238,7 +238,7 @@ class DashboardExpiryCard extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -249,21 +249,24 @@ class DashboardExpiryCard extends StatelessWidget {
                   style: const TextStyle(
                     color: ink,
                     fontWeight: FontWeight.w900,
-                    fontSize: 15,
+                    fontSize: 13,
                   ),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 2),
                 Text(
                   product.brand,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: ink.withValues(alpha: 0.58)),
+                  style: TextStyle(
+                    color: ink.withValues(alpha: 0.58),
+                    fontSize: 11,
+                  ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(999),
                   child: LinearProgressIndicator(
-                    minHeight: 6,
+                    minHeight: 5,
                     value: progress,
                     color: color,
                     backgroundColor: surfaceHighest,
@@ -286,7 +289,7 @@ class CalmShelfCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -295,8 +298,8 @@ class CalmShelfCard extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.self_improvement, color: primary, size: 36),
-          const SizedBox(height: 10),
+          const Icon(Icons.self_improvement, color: primary, size: 28),
+          const SizedBox(height: 8),
           const Text(
             'No urgent products',
             style: TextStyle(color: ink, fontWeight: FontWeight.w900),

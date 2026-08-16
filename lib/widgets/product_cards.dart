@@ -253,58 +253,69 @@ class ProductImageMock extends StatelessWidget {
         ),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Positioned(
-            top: 12,
-            right: 12,
-            child: Icon(
-              categoryIcon(product.category),
-              color: Colors.white.withValues(alpha: 0.54),
-              size: 24,
-            ),
-          ),
-          Container(
-            width: 50,
-            height: 92,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.82),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.75),
-                width: 2,
+      clipBehavior: Clip.antiAlias,
+      // The bottle is drawn on a fixed canvas and scaled to whatever space
+      // the card gives it. Laid out directly, its 92px height overflowed
+      // shorter cards and the cap and badge sat at the wrong heights.
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: SizedBox(
+          width: 130,
+          height: 130,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Positioned(
+                top: 12,
+                right: 12,
+                child: Icon(
+                  categoryIcon(product.category),
+                  color: Colors.white.withValues(alpha: 0.54),
+                  size: 24,
+                ),
               ),
-            ),
-          ),
-          Positioned(
-            top: 33,
-            child: Container(
-              width: 30,
-              height: 20,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.9),
-                borderRadius: BorderRadius.circular(7),
+              Container(
+                width: 50,
+                height: 92,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.82),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    width: 2,
+                  ),
+                ),
               ),
-            ),
-          ),
-          Positioned(
-            bottom: 42,
-            child: Container(
-              width: 38,
-              height: 24,
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.16),
-                borderRadius: BorderRadius.circular(999),
+              Positioned(
+                top: 33,
+                child: Container(
+                  width: 30,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                ),
               ),
-              child: Icon(
-                categoryIcon(product.category),
-                color: accent,
-                size: 16,
+              Positioned(
+                bottom: 42,
+                child: Container(
+                  width: 38,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Icon(
+                    categoryIcon(product.category),
+                    color: accent,
+                    size: 16,
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
