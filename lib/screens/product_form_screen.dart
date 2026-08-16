@@ -407,14 +407,28 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                     onPick: (date) => setState(() => _directExpiryDate = date),
                     onClear: () => setState(() => _directExpiryDate = null),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'PAO duration',
+                      'Period After Opening (PAO)',
                       style: TextStyle(
                         color: ink.withValues(alpha: 0.72),
                         fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'How many months the product stays good once it has been '
+                      'opened. The shortcuts and the field below are the same '
+                      'setting, so changing one updates the other.',
+                      style: TextStyle(
+                        color: ink.withValues(alpha: 0.6),
+                        fontSize: 12,
+                        height: 1.3,
                       ),
                     ),
                   ),
@@ -450,9 +464,15 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                   TextFormField(
                     controller: _expiryController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Custom expiry months',
-                      prefixIcon: Icon(Icons.event_repeat_outlined),
+                    // Keeps the shortcut chips highlighted in step with a
+                    // number typed by hand: both write this one field.
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      labelText: 'Months after opening',
+                      suffixText: 'months',
+                      helperText: _expiryHelperText(),
+                      helperMaxLines: 2,
+                      prefixIcon: const Icon(Icons.event_repeat_outlined),
                     ),
                     validator: (value) {
                       final parsed = int.tryParse(value ?? '');
@@ -572,6 +592,28 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
         ),
       ),
     );
+  }
+
+  /// Turns the PAO number into the date it actually produces, so the field
+  /// is not an abstraction the user has to work out.
+  ///
+  /// A printed expiry date takes priority over PAO in
+  /// [BeautyProduct.expiryDate], so say so rather than showing a date the
+  /// product will not use.
+  String? _expiryHelperText() {
+    if (_directExpiryDate != null) {
+      return 'Printed expiry ${dateFormat.format(_directExpiryDate!)} is used instead of this.';
+    }
+    final months = int.tryParse(_expiryController.text.trim());
+    if (months == null || months <= 0) {
+      return null;
+    }
+    final expiry = DateTime(
+      _openingDate.year,
+      _openingDate.month + months,
+      _openingDate.day,
+    );
+    return 'Expires ${dateFormat.format(expiry)}';
   }
 
   /// Adds a photo to [_scanPhotos].
