@@ -198,12 +198,15 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen>
                   child: TextField(
                     controller: _controller,
                     focusNode: _inputFocus,
-                    minLines: 1,
-                    maxLines: 4,
+                    // One line, and a hint short enough not to wrap into a
+                    // second one. The old example was 39 characters and split
+                    // the bar in two at rest.
+                    maxLines: 1,
                     textInputAction: TextInputAction.send,
                     onSubmitted: (_) => _send(),
                     decoration: const InputDecoration(
-                      hintText: 'Example: My skin is red and itchy today',
+                      hintText: 'How does your skin feel?',
+                      hintMaxLines: 1,
                       prefixIcon: Icon(Icons.spa_outlined),
                     ),
                   ),
