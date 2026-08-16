@@ -45,7 +45,12 @@ class _WishlistScreenState extends State<WishlistScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Wishlist check')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          8,
+          20,
+          28 + MediaQuery.viewPaddingOf(context).bottom,
+        ),
         children: [
           const AppHeader(
             title: 'Think before buying',

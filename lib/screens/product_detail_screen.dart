@@ -86,7 +86,12 @@ class ProductDetailScreen extends StatelessWidget {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          8,
+          20,
+          28 + MediaQuery.viewPaddingOf(context).bottom,
+        ),
         children: [
           Container(
             padding: const EdgeInsets.all(20),

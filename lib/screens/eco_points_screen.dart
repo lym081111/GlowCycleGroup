@@ -10,9 +10,12 @@ import '../widgets/info_widgets.dart';
 import '../widgets/layout_widgets.dart';
 import '../widgets/no_buy_challenge_card.dart';
 
-/// Eco dashboard: total points, unlocked badges, and recent sustainable
-/// actions.
-class EcoPointsScreen extends StatelessWidget {
+/// Eco dashboard: total points, waste avoided, the no-buy challenge, and a
+/// shared slot holding either badges or recent actions.
+///
+/// The two used to stack, making the screen long and burying the history.
+/// They now occupy one place, chosen by the selector or by swiping.
+class EcoPointsScreen extends StatefulWidget {
   const EcoPointsScreen({
     super.key,
     required this.products,
@@ -27,58 +30,54 @@ class EcoPointsScreen extends StatelessWidget {
   final Future<void> Function() onClaimNoBuyChallenge;
 
   @override
+  State<EcoPointsScreen> createState() => _EcoPointsScreenState();
+}
+
+class _EcoPointsScreenState extends State<EcoPointsScreen> {
+  /// 0 = badges, 1 = recent actions.
+  var _panel = 0;
+
+  void _select(int index) {
+    if (index != _panel) {
+      setState(() => _panel = index);
+    }
+  }
+
+  /// Swiping the panel moves between the two, matching the selector.
+  void _onSwipe(DragEndDetails details) {
+    final velocity = details.primaryVelocity;
+    if (velocity == null) {
+      return;
+    }
+    if (velocity < -250) {
+      _select(1);
+    } else if (velocity > 250) {
+      _select(0);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final stats = InventoryStats.from(products, actions, now);
-    final badges = BadgeRule.unlocked(products, actions, now);
+    final stats = InventoryStats.from(widget.products, widget.actions, now);
+    final badges = BadgeRule.unlocked(widget.products, widget.actions, now);
+
     return Scaffold(
       appBar: AppBar(title: const Text('Eco impact')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          12,
+          20,
+          24 + MediaQuery.viewPaddingOf(context).bottom,
+        ),
         children: [
           const AppHeader(
             title: 'Eco points',
             subtitle: 'Small sustainable actions, visible progress.',
           ),
           const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(22),
-            decoration: BoxDecoration(
-              color: ink,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.auto_awesome,
-                  color: Color(0xFFFFD977),
-                  size: 42,
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${stats.points}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 38,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      Text(
-                        'total eco points',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.72),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+          _PointsBanner(points: stats.points),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -105,70 +104,233 @@ class EcoPointsScreen extends StatelessWidget {
           _WasteAvoidanceTile(stats: stats),
           const SizedBox(height: 18),
           NoBuyChallengeCard(
-            actions: actions,
-            onStart: onStartNoBuyChallenge,
-            onClaim: onClaimNoBuyChallenge,
+            actions: widget.actions,
+            onStart: widget.onStartNoBuyChallenge,
+            onClaim: widget.onClaimNoBuyChallenge,
           ),
           const SizedBox(height: 18),
-          const SectionTitle('Badges unlocked'),
-          const SizedBox(height: 10),
-          if (badges.isEmpty)
-            const EmptyState(
-              icon: Icons.emoji_events_outlined,
-              title: 'No badges yet',
-              message:
-                  'Add, finish, or recycle products to unlock achievements.',
-            )
-          else
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: badges
-                  .map(
-                    (badge) => BadgeChip(label: badge.label, icon: badge.icon),
-                  )
-                  .toList(),
+          _PanelSelector(selected: _panel, onSelected: _select),
+          const SizedBox(height: 14),
+          GestureDetector(
+            onHorizontalDragEnd: _onSwipe,
+            child: AnimatedSize(
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeOut,
+              alignment: Alignment.topCenter,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 240),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                transitionBuilder: (child, animation) {
+                  // Slide in from the side the selection moved towards.
+                  final entering = child.key == ValueKey(_panel);
+                  final direction = _panel == 1 ? 1.0 : -1.0;
+                  final offset = entering ? direction : -direction;
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: Offset(offset * 0.12, 0),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: child,
+                    ),
+                  );
+                },
+                child: _panel == 0
+                    ? _BadgesPanel(key: const ValueKey(0), badges: badges)
+                    : _ActionsPanel(
+                        key: const ValueKey(1),
+                        actions: widget.actions,
+                      ),
+              ),
             ),
-          const SizedBox(height: 18),
-          const SectionTitle('Recent eco actions'),
-          const SizedBox(height: 10),
-          if (actions.isEmpty)
-            const EmptyState(
-              icon: Icons.eco_outlined,
-              title: 'No actions yet',
-              message: 'Your responsible beauty actions will appear here.',
-            )
-          else
-            ...actions
-                .take(8)
-                .map(
-                  (action) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: CircleAvatar(
-                      backgroundColor: mint,
-                      child: Text(
-                        action.pointsEarned >= 0
-                            ? '+${action.pointsEarned}'
-                            : '${action.pointsEarned}',
-                        style: const TextStyle(
-                          color: ink,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    title: Text(
-                      action.actionType,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: ink,
-                      ),
-                    ),
-                    subtitle: Text(
-                      '${action.description}\n${dateFormat.format(action.date)}',
-                    ),
-                    isThreeLine: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Two-way chooser for the shared panel slot.
+class _PanelSelector extends StatelessWidget {
+  const _PanelSelector({required this.selected, required this.onSelected});
+
+  final int selected;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: surfaceHigh,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        children: [
+          _SegmentButton(
+            label: 'Badges unlocked',
+            active: selected == 0,
+            onTap: () => onSelected(0),
+          ),
+          _SegmentButton(
+            label: 'Recent actions',
+            active: selected == 1,
+            onTap: () => onSelected(1),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SegmentButton extends StatelessWidget {
+  const _SegmentButton({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: active ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: active ? primary : ink.withValues(alpha: 0.6),
+              fontWeight: active ? FontWeight.w900 : FontWeight.w700,
+              fontSize: 13,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BadgesPanel extends StatelessWidget {
+  const _BadgesPanel({super.key, required this.badges});
+
+  final List<BadgeRule> badges;
+
+  @override
+  Widget build(BuildContext context) {
+    if (badges.isEmpty) {
+      return const EmptyState(
+        icon: Icons.emoji_events_outlined,
+        title: 'No badges yet',
+        message: 'Add, finish, or recycle products to unlock achievements.',
+      );
+    }
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: badges
+          .map((badge) => BadgeChip(label: badge.label, icon: badge.icon))
+          .toList(),
+    );
+  }
+}
+
+class _ActionsPanel extends StatelessWidget {
+  const _ActionsPanel({super.key, required this.actions});
+
+  final List<EcoAction> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    if (actions.isEmpty) {
+      return const EmptyState(
+        icon: Icons.eco_outlined,
+        title: 'No actions yet',
+        message: 'Your responsible beauty actions will appear here.',
+      );
+    }
+    return Column(
+      children: actions
+          .take(12)
+          .map(
+            (action) => ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: CircleAvatar(
+                backgroundColor: action.pointsEarned < 0 ? blush : mint,
+                child: Text(
+                  action.pointsEarned >= 0
+                      ? '+${action.pointsEarned}'
+                      : '${action.pointsEarned}',
+                  style: TextStyle(
+                    color: action.pointsEarned < 0 ? brandPink : ink,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
+              ),
+              title: Text(
+                action.actionType,
+                style: const TextStyle(fontWeight: FontWeight.w800, color: ink),
+              ),
+              subtitle: Text(
+                '${action.description}\n${dateFormat.format(action.date)}',
+              ),
+              isThreeLine: true,
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
+class _PointsBanner extends StatelessWidget {
+  const _PointsBanner({required this.points});
+
+  final int points;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: ink,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.auto_awesome, color: Color(0xFFFFD977), size: 42),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$points',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 38,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  'total eco points',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.72)),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

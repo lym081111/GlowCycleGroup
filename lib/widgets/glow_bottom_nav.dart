@@ -24,7 +24,6 @@ class GlowBottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
       decoration: BoxDecoration(
         color: surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
@@ -37,18 +36,28 @@ class GlowBottomNav extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          for (var i = 0; i < _items.length; i++)
-            _GlowNavItem(
-              icon: _items[i].$1,
-              selectedIcon: _items[i].$2,
-              label: _items[i].$3,
-              selected: selectedIndex == i,
-              onTap: () => onSelected(i),
-            ),
-        ],
+      // The bar used a fixed 16px bottom padding, which sat underneath the
+      // system navigation bar on devices that show one and hid the labels.
+      // SafeArea insets the items instead, while the decoration still runs to
+      // the bottom edge of the screen.
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              for (var i = 0; i < _items.length; i++)
+                _GlowNavItem(
+                  icon: _items[i].$1,
+                  selectedIcon: _items[i].$2,
+                  label: _items[i].$3,
+                  selected: selectedIndex == i,
+                  onTap: () => onSelected(i),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

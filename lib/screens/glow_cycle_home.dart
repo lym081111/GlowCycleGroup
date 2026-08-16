@@ -370,6 +370,7 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
                     user: widget.user,
                     onSearch: () => setState(() => _selectedIndex = 1),
                     onNotifications: _openEcoPoints,
+                    onRecycleMap: _openRecycleMap,
                     onSignOut: widget.onSignOut,
                   ),
                 Expanded(child: screens[_selectedIndex]),

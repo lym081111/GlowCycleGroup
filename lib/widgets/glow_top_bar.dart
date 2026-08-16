@@ -10,12 +10,14 @@ class GlowTopBar extends StatelessWidget {
     required this.user,
     required this.onSearch,
     required this.onNotifications,
+    required this.onRecycleMap,
     required this.onSignOut,
   });
 
   final AppUser user;
   final VoidCallback onSearch;
   final VoidCallback onNotifications;
+  final VoidCallback onRecycleMap;
   final Future<void> Function() onSignOut;
 
   @override
@@ -72,6 +74,11 @@ class GlowTopBar extends StatelessWidget {
               Icons.notifications_outlined,
               color: Color(0xFF424941),
             ),
+          ),
+          IconButton(
+            tooltip: 'Nearby recycling',
+            onPressed: onRecycleMap,
+            icon: const Icon(Icons.map_outlined, color: Color(0xFF424941)),
           ),
           PopupMenuButton<String>(
             tooltip: 'Profile',

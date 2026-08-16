@@ -67,7 +67,12 @@ class _LogContainerScreenState extends State<LogContainerScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Log empty container')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          12,
+          20,
+          24 + MediaQuery.viewPaddingOf(context).bottom,
+        ),
         children: [
           const AppHeader(
             title: 'Finished something?',

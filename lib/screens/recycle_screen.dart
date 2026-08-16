@@ -72,7 +72,12 @@ class _RecycleScreenState extends State<RecycleScreen> {
             return const Center(child: Text('Could not search right now.'));
           }
           return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            padding: EdgeInsets.fromLTRB(
+              20,
+              12,
+              20,
+              24 + MediaQuery.viewPaddingOf(context).bottom,
+            ),
             children: [
               const AppHeader(
                 title: 'Recycle points',
