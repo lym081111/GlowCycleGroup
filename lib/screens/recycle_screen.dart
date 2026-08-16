@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
-import '../models/recycle_point.dart';
+import '../models/recycle_lookup.dart';
 import '../services/recycle_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/info_widgets.dart';
 import '../widgets/layout_widgets.dart';
 
-/// Nearby recycling drop-off points, fetched from the Overpass API.
+/// Nearby recycling drop-off points, searched around the device's location
+/// when it is available and the UTAR Kampar reference otherwise.
 class RecycleScreen extends StatefulWidget {
   const RecycleScreen({super.key});
 
@@ -15,115 +16,179 @@ class RecycleScreen extends StatefulWidget {
 }
 
 class _RecycleScreenState extends State<RecycleScreen> {
-  late Future<List<RecyclePoint>> _points;
+  late Future<RecycleLookup> _lookup;
 
   @override
   void initState() {
     super.initState();
-    _points = RecycleService.fetchRecyclePoints();
+    _lookup = _search();
+  }
+
+  Future<RecycleLookup> _search() async {
+    final position = await RecycleService.currentPosition();
+    return RecycleService.fetchRecyclePoints(
+      latitude: position?.latitude,
+      longitude: position?.longitude,
+    );
+  }
+
+  void _retry() {
+    setState(() => _lookup = _search());
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Nearby recycling')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-        children: [
-          const AppHeader(
-            title: 'Recycle points',
-            subtitle:
-                'External endpoint data for responsible packaging disposal.',
+      appBar: AppBar(
+        title: const Text('Nearby recycling'),
+        actions: [
+          IconButton(
+            tooltip: 'Search again',
+            onPressed: _retry,
+            icon: const Icon(Icons.refresh),
           ),
-          const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: mint,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Row(
+        ],
+      ),
+      body: FutureBuilder<RecycleLookup>(
+        future: _lookup,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(34),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 14),
+                    Text('Finding recycling points near you...'),
+                  ],
+                ),
+              ),
+            );
+          }
+          final lookup = snapshot.data;
+          if (lookup == null) {
+            return const Center(child: Text('Could not search right now.'));
+          }
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            children: [
+              const AppHeader(
+                title: 'Recycle points',
+                subtitle:
+                    'Live OpenStreetMap data for responsible packaging disposal.',
+              ),
+              const SizedBox(height: 14),
+              _SourceBanner(lookup: lookup),
+              const SizedBox(height: 16),
+              ...lookup.points.map(
+                (point) => Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.place_outlined, color: sage),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                point.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 18,
+                                  color: ink,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          point.address,
+                          style: TextStyle(
+                            color: ink.withValues(alpha: 0.74),
+                            height: 1.35,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        InfoPill(
+                          icon: Icons.recycling,
+                          text: point.acceptedItems,
+                        ),
+                        const SizedBox(height: 8),
+                        InfoPill(
+                          icon: Icons.schedule,
+                          text: point.openingHours,
+                        ),
+                        const SizedBox(height: 8),
+                        InfoPill(
+                          icon: Icons.social_distance,
+                          text:
+                              '${point.distanceKm.toStringAsFixed(1)} km from ${lookup.originLabel}',
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// States plainly whether the list is live OpenStreetMap data or the curated
+/// fallback, and why.
+class _SourceBanner extends StatelessWidget {
+  const _SourceBanner({required this.lookup});
+
+  final RecycleLookup lookup;
+
+  @override
+  Widget build(BuildContext context) {
+    final live = lookup.isLive;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: live ? mint : blush,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            live ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
+            color: live ? primary : brandPink,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.cloud_sync_outlined, color: ink),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'This screen connects to OpenStreetMap Overpass API and falls back to curated demo points if the endpoint is unavailable.',
-                    style: TextStyle(color: ink, height: 1.35),
+                Text(
+                  live ? 'Live OpenStreetMap data' : 'Demo data',
+                  style: const TextStyle(
+                    color: ink,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  lookup.note ??
+                      'Searched around ${lookup.originLabel} through the Overpass API.',
+                  style: TextStyle(
+                    color: ink.withValues(alpha: 0.72),
+                    height: 1.3,
                   ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 16),
-          FutureBuilder<List<RecyclePoint>>(
-            future: _points,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.all(34),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              final points = snapshot.data ?? RecycleService.fallbackPoints;
-              return Column(
-                children: points
-                    .map(
-                      (point) => Card(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.place_outlined, color: sage),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      point.name,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 18,
-                                        color: ink,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                point.address,
-                                style: TextStyle(
-                                  color: ink.withValues(alpha: 0.74),
-                                  height: 1.35,
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              InfoPill(
-                                icon: Icons.recycling,
-                                text: point.acceptedItems,
-                              ),
-                              const SizedBox(height: 8),
-                              InfoPill(
-                                icon: Icons.schedule,
-                                text: point.openingHours,
-                              ),
-                              const SizedBox(height: 8),
-                              InfoPill(
-                                icon: Icons.social_distance,
-                                text:
-                                    '${point.distanceKm.toStringAsFixed(1)} km from UTAR Kampar reference',
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    )
-                    .toList(),
-              );
-            },
           ),
         ],
       ),
