@@ -45,11 +45,47 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
   }
 
   Future<void> _load() async {
-    final data = await _store.load();
-    setState(() {
-      _products = data.products;
-      _actions = data.actions;
-      _loading = false;
+    try {
+      final data = await _store.load();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _products = data.products;
+        _actions = data.actions;
+        _loading = false;
+      });
+    } catch (error) {
+      // Whatever went wrong, clear the spinner: a stuck loading indicator
+      // leaves the user with no way forward and no idea why.
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loading = false);
+      _reportLoadIssue('Could not load your shelf: $error');
+      return;
+    }
+    final warning = _store.lastLoadError;
+    if (warning != null) {
+      _reportLoadIssue(warning);
+    }
+  }
+
+  void _reportLoadIssue(String message) {
+    if (!mounted) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 6),
+        ),
+      );
     });
   }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -61,29 +62,68 @@ class GlowStore {
       .doc(user.uid)
       .collection('actions');
 
+  /// Why the last [load] could not reach Firestore, or null if it did.
+  ///
+  /// The UI reports this so a shelf served from local storage is never
+  /// mistaken for a synced one.
+  String? lastLoadError;
+
+  /// Firestore reads are bounded, so a denied rule or a dead connection
+  /// surfaces as a fallback rather than an indefinite spinner.
+  static const _firestoreTimeout = Duration(seconds: 15);
+
+  /// Loads the user's shelf, preferring Firestore and falling back to local
+  /// storage.
+  ///
+  /// A Firestore failure — denied rules, App Check rejection, no connectivity
+  /// — must not propagate: an unhandled exception here would leave the home
+  /// screen stuck on its loading indicator with nothing to act on.
   Future<AppData> load() async {
+    lastLoadError = null;
     if (_useFirebase) {
-      await _migrateLocalDataIfNeeded();
-      final productSnapshot = await _productsRef
-          .orderBy('updatedAt', descending: true)
-          .get();
-      final actionSnapshot = await _actionsRef
-          .orderBy('date', descending: true)
-          .get();
-      final products = productSnapshot.docs
-          .map((doc) => BeautyProduct.fromJson(doc.data()))
-          .toList();
-      final actions = actionSnapshot.docs
-          .map((doc) => EcoAction.fromJson(doc.data()))
-          .toList();
-      if (products.isEmpty) {
-        final seeded = _seedProducts();
-        await save(seeded, actions);
-        return AppData(products: seeded, actions: actions);
+      try {
+        await _migrateLocalDataIfNeeded();
+        final productSnapshot = await _productsRef
+            .orderBy('updatedAt', descending: true)
+            .get()
+            .timeout(_firestoreTimeout);
+        final actionSnapshot = await _actionsRef
+            .orderBy('date', descending: true)
+            .get()
+            .timeout(_firestoreTimeout);
+        final products = productSnapshot.docs
+            .map((doc) => BeautyProduct.fromJson(doc.data()))
+            .toList();
+        final actions = actionSnapshot.docs
+            .map((doc) => EcoAction.fromJson(doc.data()))
+            .toList();
+        if (products.isEmpty) {
+          final seeded = _seedProducts();
+          await save(seeded, actions);
+          return AppData(products: seeded, actions: actions);
+        }
+        return AppData(products: products, actions: actions);
+      } catch (exception) {
+        lastLoadError = _describeLoadError(exception);
+        if (kDebugMode) {
+          debugPrint('Firestore load failed, using local data: $exception');
+        }
+        return _loadLocal();
       }
-      return AppData(products: products, actions: actions);
     }
     return _loadLocal();
+  }
+
+  /// Turns a Firestore exception into something a user can act on.
+  static String _describeLoadError(Object exception) {
+    final text = exception.toString();
+    if (text.contains('permission-denied')) {
+      return 'Firestore rules are rejecting this account. Showing local data.';
+    }
+    if (text.contains('unavailable') || exception is TimeoutException) {
+      return 'Could not reach Firestore. Showing local data.';
+    }
+    return 'Cloud sync unavailable. Showing local data.';
   }
 
   Future<AppData> _loadLocal() async {
