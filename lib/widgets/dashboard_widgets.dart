@@ -19,7 +19,8 @@ class DashboardWelcomeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(22),
+      // Kept tight so the three quick actions clear the fold.
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: const RadialGradient(
           center: Alignment.topLeft,
@@ -44,17 +45,17 @@ class DashboardWelcomeCard extends StatelessWidget {
             'Hello, User!',
             style: TextStyle(
               color: Color(0xFF153B1C),
-              fontSize: 30,
+              fontSize: 22,
               fontWeight: FontWeight.w900,
               letterSpacing: 0,
             ),
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 3),
           Text(
             'Your mindful routine is flourishing.',
-            style: TextStyle(color: ink.withValues(alpha: 0.66), fontSize: 15),
+            style: TextStyle(color: ink.withValues(alpha: 0.66), fontSize: 13),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
@@ -102,10 +103,10 @@ class DashboardMetricTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(11),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.62),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.white.withValues(alpha: 0.48)),
       ),
       child: Column(
@@ -131,7 +132,7 @@ class DashboardMetricTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: ink,
-                    fontSize: 32,
+                    fontSize: 26,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 0,
                     height: 1,

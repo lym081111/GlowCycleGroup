@@ -17,9 +17,9 @@ class GlowBottomNav extends StatelessWidget {
     (Icons.home_outlined, Icons.home, 'Home'),
     (Icons.inventory_2_outlined, Icons.inventory_2, 'Shelf'),
     (Icons.document_scanner_outlined, Icons.document_scanner, 'Scan'),
-    // A speech bubble with a spark reads as "something that answers you",
-    // and keeps this distinct from the bare star now used for eco points.
-    (Icons.assistant_outlined, Icons.assistant, 'Assistant'),
+    // A chat bubble: the tab is a conversation, and its silhouette stays
+    // distinct from the star now used for eco points.
+    (Icons.chat_bubble_outline, Icons.chat_bubble, 'Assistant'),
     (Icons.savings_outlined, Icons.savings, 'Saver'),
   ];
 
@@ -46,16 +46,19 @@ class GlowBottomNav extends StatelessWidget {
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+          // Equal shares rather than spaceAround, so the gaps do not change
+          // with the width of each label.
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               for (var i = 0; i < _items.length; i++)
-                _GlowNavItem(
-                  icon: _items[i].$1,
-                  selectedIcon: _items[i].$2,
-                  label: _items[i].$3,
-                  selected: selectedIndex == i,
-                  onTap: () => onSelected(i),
+                Expanded(
+                  child: _GlowNavItem(
+                    icon: _items[i].$1,
+                    selectedIcon: _items[i].$2,
+                    label: _items[i].$3,
+                    selected: selectedIndex == i,
+                    onTap: () => onSelected(i),
+                  ),
                 ),
             ],
           ),
@@ -84,36 +87,37 @@ class _GlowNavItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: EdgeInsets.symmetric(
-          horizontal: selected ? 13 : 10,
-          vertical: 7,
-        ),
-        decoration: BoxDecoration(
-          color: selected ? primaryContainer : Colors.transparent,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
+      borderRadius: BorderRadius.circular(16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // The highlight sits behind the icon at a fixed size, so selecting
+          // a tab no longer widens it and shifts its neighbours.
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            decoration: BoxDecoration(
+              color: selected ? primaryContainer : Colors.transparent,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Icon(
               selected ? selectedIcon : icon,
               color: selected ? primary : const Color(0xFF424941),
               size: 23,
             ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                color: selected ? primary : const Color(0xFF424941),
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: selected ? primary : const Color(0xFF424941),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
