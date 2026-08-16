@@ -196,13 +196,14 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Colors.white.withValues(alpha: 0.86)),
               ),
-              child: Row(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Column(
-                      children: [
-                        AspectRatio(
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: AspectRatio(
                           aspectRatio: 1.1,
                           child: Container(
                             clipBehavior: Clip.antiAlias,
@@ -240,36 +241,66 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                   ),
                           ),
                         ),
-                        if (_scanPhotos.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          _ScanPhotoStrip(
-                            photos: _scanPhotos,
-                            onRemove: (index) =>
-                                setState(() => _scanPhotos.removeAt(index)),
-                          ),
-                        ],
-                        const SizedBox(height: 8),
-                        Row(
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: () =>
-                                    _pickProductPhoto(ImageSource.camera),
-                                child: const Icon(Icons.photo_camera_outlined),
+                            const Text(
+                              'AI Smart Fill',
+                              style: TextStyle(
+                                color: ink,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 18,
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: () =>
-                                    _pickProductPhoto(ImageSource.gallery),
-                                child: const Icon(Icons.photo_library_outlined),
+                            const SizedBox(height: 6),
+                            Text(
+                              _scanSource == 'manual'
+                                  ? 'Photograph the front for the name and brand, then the back for the ingredient list. Both are read together.'
+                                  : 'Last scan confidence: ${(_scanConfidence * 100).round()}%',
+                              style: TextStyle(
+                                color: ink.withValues(alpha: 0.66),
+                                height: 1.3,
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        FilledButton.icon(
+                      ),
+                    ],
+                  ),
+                  if (_scanPhotos.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    _ScanPhotoStrip(
+                      photos: _scanPhotos,
+                      onRemove: (index) =>
+                          setState(() => _scanPhotos.removeAt(index)),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      OutlinedButton(
+                        onPressed: () => _pickProductPhoto(ImageSource.camera),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(52, 44),
+                          padding: EdgeInsets.zero,
+                        ),
+                        child: const Icon(Icons.photo_camera_outlined),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: () => _pickProductPhoto(ImageSource.gallery),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(52, 44),
+                          padding: EdgeInsets.zero,
+                        ),
+                        child: const Icon(Icons.photo_library_outlined),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FilledButton.icon(
                           onPressed: _scanning ? null : _scanPhotoWithAi,
                           icon: _scanning
                               ? const SizedBox(
@@ -286,65 +317,15 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                 : _scanPhotos.isEmpty
                                 ? 'AI scan'
                                 : 'Extract from ${_scanPhotos.length} photo${_scanPhotos.length == 1 ? '' : 's'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(42),
+                            minimumSize: const Size.fromHeight(44),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'AI Smart Fill',
-                          style: TextStyle(
-                            color: ink,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 18,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          _scanSource == 'manual'
-                              ? 'Scan packaging text to auto-fill ingredients, dates, batch number, and category.'
-                              : 'Last scan confidence: ${(_scanConfidence * 100).round()}%',
-                          style: TextStyle(
-                            color: ink.withValues(alpha: 0.66),
-                            height: 1.3,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            for (final months in [6, 12, 18, 24])
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.72),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                                child: Text(
-                                  '${months}M',
-                                  style: const TextStyle(
-                                    color: primary,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ],
               ),

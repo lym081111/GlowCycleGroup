@@ -4,6 +4,7 @@ import '../core/constants.dart';
 import '../models/beauty_product.dart';
 import '../theme/app_colors.dart';
 import '../widgets/info_widgets.dart';
+import '../widgets/product_cards.dart';
 import '../widgets/status_widgets.dart';
 
 /// Full record for one product, plus the finish and recycle lifecycle actions.
@@ -99,7 +100,22 @@ class ProductDetailScreen extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    CategoryIcon(category: product.category, size: 58),
+                    // Show the photo the user actually took when there is one;
+                    // ProductImageMock falls back to the category illustration
+                    // for products added without a picture.
+                    SizedBox(
+                      width: 58,
+                      height: 58,
+                      child: product.imagePath.isEmpty
+                          ? CategoryIcon(category: product.category, size: 58)
+                          : ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: ProductImageMock(
+                                product: product,
+                                status: status,
+                              ),
+                            ),
+                    ),
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
