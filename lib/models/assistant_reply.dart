@@ -34,9 +34,7 @@ class AssistantReply {
     final lower = message.toLowerCase();
     final now = DateTime.now();
     final eyeConcern = _isEyeConcern(lower);
-    final active = products
-        .where((item) => item.isRecommendable(now))
-        .toList();
+    final active = products.where((item) => item.isRecommendable(now)).toList();
     final gentle = active.where((item) {
       final text =
           '${item.name} ${item.category} ${item.ingredients.join(' ')} ${item.notes}'

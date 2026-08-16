@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../core/eco_rewards.dart';
 import '../models/app_user.dart';
 import '../models/beauty_product.dart';
 import '../models/eco_action.dart';
+import '../models/no_buy_challenge.dart';
 import '../services/glow_store.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glow_bottom_nav.dart';
@@ -95,19 +97,70 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
     await _store.save(_products, _actions);
   }
 
+  /// True when [productId] has already been paid for [actionType].
+  ///
+  /// Status is editable, so without this a product could be set back to
+  /// Opened and finished again for another award, indefinitely.
+  bool _alreadyAwarded(String actionType, String productId) {
+    return _actions.any(
+      (item) =>
+          item.actionType == actionType && item.relatedProductId == productId,
+    );
+  }
+
+  void _showEcoMessage(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
   Future<void> _addProduct(BeautyProduct product) async {
+    final now = DateTime.now();
+    // Claiming a skipped purchase and then buying into that same category the
+    // same day was not a skip, so the award is taken back.
+    final claimedToday = _actions.any(
+      (item) =>
+          item.actionType == EcoActionTypes.avoidDuplicate &&
+          item.category == product.category &&
+          item.isSameDayAs(now),
+    );
+    final alreadyReversed = _actions.any(
+      (item) =>
+          item.actionType == EcoActionTypes.duplicateReversed &&
+          item.category == product.category &&
+          item.isSameDayAs(now),
+    );
+    final reverseSkip = claimedToday && !alreadyReversed;
+
     setState(() {
       _products = [..._products, product];
       _actions = [
+        if (reverseSkip)
+          EcoAction.created(
+            actionType: EcoActionTypes.duplicateReversed,
+            pointsEarned: -EcoRewards.avoidDuplicate,
+            description:
+                'Bought ${product.category} after skipping it today, so those points were returned.',
+            category: product.category,
+          ),
         EcoAction.created(
-          actionType: 'Add product',
-          pointsEarned: 1,
+          actionType: EcoActionTypes.addProduct,
+          pointsEarned: EcoRewards.addProduct,
           description: '${product.name} added to your beauty shelf.',
           relatedProductId: product.id,
+          category: product.category,
         ),
         ..._actions,
       ];
     });
+    if (reverseSkip) {
+      _showEcoMessage(
+        'Skipped-purchase points for ${product.category} were returned.',
+      );
+    }
     await _persist();
   }
 
@@ -133,55 +186,86 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
 
   Future<void> _markFinished(BeautyProduct product) async {
     final now = DateTime.now();
+    final paid = _alreadyAwarded(EcoActionTypes.finishProduct, product.id);
     final beforeExpiry = product.daysRemaining(now) >= 0;
-    final points = beforeExpiry ? 15 : 10;
     final updated = product.copyWith(status: 'Finished', updatedAt: now);
     setState(() {
       _products = _products
           .map((item) => item.id == product.id ? updated : item)
           .toList();
-      _actions = [
-        EcoAction.created(
-          actionType: 'Finish product',
-          pointsEarned: points,
-          description: beforeExpiry
-              ? '${product.name} finished before expiry.'
-              : '${product.name} finished and removed from waste risk.',
-          relatedProductId: product.id,
-        ),
-        ..._actions,
-      ];
+      if (!paid) {
+        _actions = [
+          EcoAction.created(
+            actionType: EcoActionTypes.finishProduct,
+            pointsEarned: beforeExpiry
+                ? EcoRewards.finishBeforeExpiry
+                : EcoRewards.finishAfterExpiry,
+            description: beforeExpiry
+                ? '${product.name} finished before expiry.'
+                : '${product.name} finished and removed from waste risk.',
+            relatedProductId: product.id,
+            category: product.category,
+          ),
+          ..._actions,
+        ];
+      }
     });
+    if (paid) {
+      _showEcoMessage('${product.name} already earned its finishing points.');
+    }
     await _persist();
   }
 
   Future<void> _markRecycled(BeautyProduct product) async {
     final now = DateTime.now();
+    final paid = _alreadyAwarded(EcoActionTypes.recycleContainer, product.id);
     final updated = product.copyWith(status: 'Recycled', updatedAt: now);
     setState(() {
       _products = _products
           .map((item) => item.id == product.id ? updated : item)
           .toList();
-      _actions = [
-        EcoAction.created(
-          actionType: 'Recycle container',
-          pointsEarned: 15,
-          description: '${product.name} container recycled responsibly.',
-          relatedProductId: product.id,
-        ),
-        ..._actions,
-      ];
+      if (!paid) {
+        _actions = [
+          EcoAction.created(
+            actionType: EcoActionTypes.recycleContainer,
+            pointsEarned: EcoRewards.recycleContainer,
+            description: '${product.name} container recycled responsibly.',
+            relatedProductId: product.id,
+            category: product.category,
+          ),
+          ..._actions,
+        ];
+      }
     });
+    if (paid) {
+      _showEcoMessage('${product.name} already earned its recycling points.');
+    }
     await _persist();
   }
 
+  /// One skipped purchase per category per day.
+  ///
+  /// The wishlist screen only disabled its own button, so leaving and
+  /// returning let the same skip be claimed without limit.
   Future<void> _avoidDuplicate(String category) async {
+    final now = DateTime.now();
+    final claimedToday = _actions.any(
+      (item) =>
+          item.actionType == EcoActionTypes.avoidDuplicate &&
+          item.category == category &&
+          item.isSameDayAs(now),
+    );
+    if (claimedToday) {
+      _showEcoMessage('You already logged a skipped $category purchase today.');
+      return;
+    }
     setState(() {
       _actions = [
         EcoAction.created(
-          actionType: 'Avoid duplicate',
-          pointsEarned: 25,
+          actionType: EcoActionTypes.avoidDuplicate,
+          pointsEarned: EcoRewards.avoidDuplicate,
           description: 'Skipped a duplicate $category purchase.',
+          category: category,
         ),
         ..._actions,
       ];
@@ -189,13 +273,35 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
     await _persist();
   }
 
-  Future<void> _completeNoBuyChallenge() async {
+  Future<void> _startNoBuyChallenge() async {
     setState(() {
       _actions = [
         EcoAction.created(
-          actionType: 'No-buy challenge',
-          pointsEarned: 60,
-          description: 'Completed a mindful no-buy challenge.',
+          actionType: EcoActionTypes.noBuyStarted,
+          pointsEarned: 0,
+          description:
+              'Started a ${EcoRewards.noBuyChallengeDays}-day no-buy challenge.',
+        ),
+        ..._actions,
+      ];
+    });
+    await _persist();
+  }
+
+  /// Pays out only once the challenge has actually run its course.
+  Future<void> _claimNoBuyChallenge() async {
+    final challenge = NoBuyChallenge.from(_actions, DateTime.now());
+    if (!challenge.readyToClaim) {
+      _showEcoMessage('This challenge is not finished yet.');
+      return;
+    }
+    setState(() {
+      _actions = [
+        EcoAction.created(
+          actionType: EcoActionTypes.noBuyCompleted,
+          pointsEarned: EcoRewards.noBuyChallenge,
+          description:
+              'Completed a ${EcoRewards.noBuyChallengeDays}-day no-buy challenge.',
         ),
         ..._actions,
       ];
@@ -228,7 +334,8 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
       GlowSaverScreen(
         products: _products,
         actions: _actions,
-        onNoBuyChallenge: _completeNoBuyChallenge,
+        onStartNoBuyChallenge: _startNoBuyChallenge,
+        onClaimNoBuyChallenge: _claimNoBuyChallenge,
         onOpenRecycleMap: _openRecycleMap,
         onOpenWishlistCheck: _openWishlistCheck,
       ),
@@ -351,7 +458,8 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
         builder: (_) => EcoPointsScreen(
           products: _products,
           actions: _actions,
-          onNoBuyChallenge: _completeNoBuyChallenge,
+          onStartNoBuyChallenge: _startNoBuyChallenge,
+          onClaimNoBuyChallenge: _claimNoBuyChallenge,
         ),
       ),
     );

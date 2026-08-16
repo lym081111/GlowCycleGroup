@@ -8,6 +8,7 @@ import '../models/inventory_stats.dart';
 import '../theme/app_colors.dart';
 import '../widgets/info_widgets.dart';
 import '../widgets/layout_widgets.dart';
+import '../widgets/no_buy_challenge_card.dart';
 
 /// Eco dashboard: total points, unlocked badges, and recent sustainable
 /// actions.
@@ -16,12 +17,14 @@ class EcoPointsScreen extends StatelessWidget {
     super.key,
     required this.products,
     required this.actions,
-    required this.onNoBuyChallenge,
+    required this.onStartNoBuyChallenge,
+    required this.onClaimNoBuyChallenge,
   });
 
   final List<BeautyProduct> products;
   final List<EcoAction> actions;
-  final Future<void> Function() onNoBuyChallenge;
+  final Future<void> Function() onStartNoBuyChallenge;
+  final Future<void> Function() onClaimNoBuyChallenge;
 
   @override
   Widget build(BuildContext context) {
@@ -98,13 +101,13 @@ class EcoPointsScreen extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          _WasteAvoidanceTile(stats: stats),
           const SizedBox(height: 18),
-          FilledButton.icon(
-            onPressed: onNoBuyChallenge,
-            icon: const Icon(Icons.calendar_month_outlined),
-            // The handler awards 60; the old "+20" label contradicted both it
-            // and the Glow Saver button that calls the same code.
-            label: const Text('Complete no-buy challenge +60'),
+          NoBuyChallengeCard(
+            actions: actions,
+            onStart: onStartNoBuyChallenge,
+            onClaim: onClaimNoBuyChallenge,
           ),
           const SizedBox(height: 18),
           const SectionTitle('Badges unlocked'),
@@ -144,7 +147,9 @@ class EcoPointsScreen extends StatelessWidget {
                     leading: CircleAvatar(
                       backgroundColor: mint,
                       child: Text(
-                        '+${action.pointsEarned}',
+                        action.pointsEarned >= 0
+                            ? '+${action.pointsEarned}'
+                            : '${action.pointsEarned}',
                         style: const TextStyle(
                           color: ink,
                           fontWeight: FontWeight.w800,
@@ -164,6 +169,86 @@ class EcoPointsScreen extends StatelessWidget {
                     isThreeLine: true,
                   ),
                 ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Share of settled products that were used up rather than left to expire.
+///
+/// Points can only ever rise, so they cannot show failure. This is derived
+/// from product outcomes, which means no amount of tapping can inflate it.
+class _WasteAvoidanceTile extends StatelessWidget {
+  const _WasteAvoidanceTile({required this.stats});
+
+  final InventoryStats stats;
+
+  @override
+  Widget build(BuildContext context) {
+    final rate = stats.wasteAvoidanceRate;
+    final hasData = rate != null;
+    final percent = hasData ? (rate * 100).round() : 0;
+    final tone = !hasData
+        ? ink.withValues(alpha: 0.5)
+        : percent >= 70
+        ? sage
+        : percent >= 40
+        ? amber
+        : danger;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ink.withValues(alpha: 0.06)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.trending_up, color: tone),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Waste avoided',
+                  style: TextStyle(color: ink, fontWeight: FontWeight.w900),
+                ),
+              ),
+              Text(
+                hasData ? '$percent%' : '--',
+                style: TextStyle(
+                  color: tone,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              minHeight: 6,
+              value: hasData ? rate : 0,
+              color: tone,
+              backgroundColor: surfaceHigh,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            hasData
+                ? '${stats.finished + stats.recycled} of ${stats.settled} finished products were used up or recycled. '
+                      '${stats.expired} expired.'
+                : 'Finish or recycle a product to start tracking how much waste you avoid.',
+            style: TextStyle(
+              color: ink.withValues(alpha: 0.64),
+              fontSize: 12,
+              height: 1.3,
+            ),
+          ),
         ],
       ),
     );

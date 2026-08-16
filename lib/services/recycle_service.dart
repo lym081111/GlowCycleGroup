@@ -115,8 +115,9 @@ out center 12;
               ? 'OpenStreetMap recycling location'
               : address,
           acceptedItems: _acceptedItems(tags),
-          openingHours: (tags['opening_hours'] ?? 'Check with venue before visiting')
-              .toString(),
+          openingHours:
+              (tags['opening_hours'] ?? 'Check with venue before visiting')
+                  .toString(),
           latitude: pointLat,
           longitude: pointLon,
           distanceKm: distanceKm(lat, lng, pointLat, pointLon),
@@ -155,8 +156,7 @@ out center 12;
   static String _acceptedItems(Map<String, dynamic> tags) {
     final accepted = tags.entries
         .where(
-          (entry) =>
-              entry.key.startsWith('recycling:') && entry.value == 'yes',
+          (entry) => entry.key.startsWith('recycling:') && entry.value == 'yes',
         )
         .map((entry) => entry.key.substring('recycling:'.length))
         .map((item) => item.replaceAll('_', ' '))
@@ -203,12 +203,7 @@ out center 12;
   ];
 
   /// Great-circle distance between two coordinates, in kilometres.
-  static double distanceKm(
-    double lat1,
-    double lon1,
-    double lat2,
-    double lon2,
-  ) {
+  static double distanceKm(double lat1, double lon1, double lat2, double lon2) {
     const earthRadiusKm = 6371.0;
     final dLat = _degToRad(lat2 - lat1);
     final dLon = _degToRad(lon2 - lon1);

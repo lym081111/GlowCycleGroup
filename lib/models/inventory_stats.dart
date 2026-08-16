@@ -44,4 +44,21 @@ class InventoryStats {
   final int finished;
   final int recycled;
   final int points;
+
+  /// Products whose life ended one way or the other.
+  int get settled => finished + recycled + expired;
+
+  /// Share of settled products that were used up rather than left to expire,
+  /// from 0 to 1, or null before anything has been settled.
+  ///
+  /// Points only ever accumulate, so they cannot express failure: a shelf full
+  /// of expired products scores the same as a well managed one. This is the
+  /// counterweight, and no amount of tapping can inflate it because it is
+  /// derived from product outcomes rather than logged actions.
+  double? get wasteAvoidanceRate {
+    if (settled == 0) {
+      return null;
+    }
+    return (finished + recycled) / settled;
+  }
 }

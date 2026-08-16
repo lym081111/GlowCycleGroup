@@ -289,9 +289,7 @@ class GlowStore {
         maxOutputTokens: 4096,
         // Extraction is transcription, not reasoning. Minimal thinking keeps
         // the token budget for output and cuts scan latency.
-        thinkingConfig: ThinkingConfig.withThinkingLevel(
-          ThinkingLevel.minimal,
-        ),
+        thinkingConfig: ThinkingConfig.withThinkingLevel(ThinkingLevel.minimal),
         responseMimeType: 'application/json',
         responseSchema: responseSchema,
       ),
@@ -402,8 +400,7 @@ ${ocrText.isEmpty ? '(No readable OCR text.)' : ocrText}
         'safetyNote': Schema.string(),
       },
     );
-    const systemInstruction =
-        '''
+    const systemInstruction = '''
 You are Glow Assistant, a cautious beauty inventory helper. Give practical,
 short skincare guidance based only on the shelf inventory supplied with each
 question.

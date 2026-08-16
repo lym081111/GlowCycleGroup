@@ -7,6 +7,7 @@ import '../models/inventory_stats.dart';
 import '../theme/app_colors.dart';
 import '../widgets/info_widgets.dart';
 import '../widgets/layout_widgets.dart';
+import '../widgets/no_buy_challenge_card.dart';
 import '../widgets/product_cards.dart';
 
 /// Saver tab: estimated savings, value at risk, and the products worth
@@ -16,14 +17,16 @@ class GlowSaverScreen extends StatelessWidget {
     super.key,
     required this.products,
     required this.actions,
-    required this.onNoBuyChallenge,
+    required this.onStartNoBuyChallenge,
+    required this.onClaimNoBuyChallenge,
     required this.onOpenRecycleMap,
     required this.onOpenWishlistCheck,
   });
 
   final List<BeautyProduct> products;
   final List<EcoAction> actions;
-  final Future<void> Function() onNoBuyChallenge;
+  final Future<void> Function() onStartNoBuyChallenge;
+  final Future<void> Function() onClaimNoBuyChallenge;
   final VoidCallback onOpenRecycleMap;
   final VoidCallback onOpenWishlistCheck;
 
@@ -139,11 +142,11 @@ class GlowSaverScreen extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        OutlinedButton.icon(
-          onPressed: onNoBuyChallenge,
-          icon: const Icon(Icons.calendar_month_outlined),
-          label: const Text('Log no-buy challenge: RM 60 saved'),
+        const SizedBox(height: 12),
+        NoBuyChallengeCard(
+          actions: actions,
+          onStart: onStartNoBuyChallenge,
+          onClaim: onClaimNoBuyChallenge,
         ),
         const SizedBox(height: 18),
         const SectionTitle('Use before buying'),
