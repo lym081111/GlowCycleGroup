@@ -228,13 +228,13 @@ class GlowStore {
 
   Future<ProductScanResult> extractProductData({
     required String ocrText,
-    required String imageDataUri,
+    required List<String> imageDataUris,
   }) async {
     if (_useFirebase) {
       try {
         return await _scanProductWithGemini(
           ocrText: ocrText,
-          imageDataUri: imageDataUri,
+          imageDataUris: imageDataUris,
         );
       } catch (exception) {
         if (kDebugMode) {
@@ -249,13 +249,21 @@ class GlowStore {
 
   Future<ProductScanResult> _scanProductWithGemini({
     required String ocrText,
-    required String imageDataUri,
+    required List<String> imageDataUris,
   }) async {
-    final dataUri = RegExp(
-      r'^data:([^;]+);base64,(.+)$',
-    ).firstMatch(imageDataUri);
-    if (dataUri == null) {
-      throw const FormatException('The product photo is not a valid image.');
+    final pattern = RegExp(r'^data:([^;]+);base64,(.+)$');
+    final imageParts = <InlineDataPart>[];
+    for (final uri in imageDataUris) {
+      final match = pattern.firstMatch(uri);
+      if (match == null) {
+        continue;
+      }
+      imageParts.add(
+        InlineDataPart(match.group(1)!, base64Decode(match.group(2)!)),
+      );
+    }
+    if (imageParts.isEmpty) {
+      throw const FormatException('No valid product photo to scan.');
     }
 
     final responseSchema = Schema.object(
@@ -290,8 +298,10 @@ class GlowStore {
     );
     final prompt =
         '''
-You extract facts from a beauty-product package. Use the photo and OCR text
-together; the photo is primary when OCR characters are unclear.
+You extract facts from a beauty-product package. Use the photos and OCR text
+together; the photos are primary when OCR characters are unclear.
+
+${imageParts.length == 1 ? 'One photo is attached.' : '${imageParts.length} photos of the same product are attached, in the order the user took them. They show different faces of the package: the front usually carries the product name and brand, while the back or side carries the ingredient list, batch code, PAO symbol, and dates. Merge them into one record and never report the same product twice.'}
 
 Return the requested JSON only. Follow these rules exactly:
 - Extract only text that is visibly present. Never invent a brand, ingredient,
@@ -308,17 +318,14 @@ Return the requested JSON only. Follow these rules exactly:
 - productName and brand may be empty strings when unreadable.
 - confidence must reflect the reliability of the visible evidence, from 0 to 1.
 
-OCR text from this image:
+OCR text read from the photos:
 ${ocrText.isEmpty ? '(No readable OCR text.)' : ocrText}
 ''';
     final response = await model
         .generateContent([
-          Content.multi([
-            TextPart(prompt),
-            InlineDataPart(dataUri.group(1)!, base64Decode(dataUri.group(2)!)),
-          ]),
+          Content.multi([TextPart(prompt), ...imageParts]),
         ])
-        .timeout(const Duration(seconds: 25));
+        .timeout(Duration(seconds: 25 + (imageParts.length - 1) * 10));
     final raw = response.text;
     if (raw == null || raw.trim().isEmpty) {
       throw const FormatException('Gemini returned an empty product scan.');

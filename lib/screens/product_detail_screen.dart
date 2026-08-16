@@ -23,6 +23,23 @@ class ProductDetailScreen extends StatelessWidget {
   final Future<void> Function() onFinished;
   final Future<void> Function() onRecycled;
 
+  /// Describes where the photo lives.
+  ///
+  /// [BeautyProduct.imagePath] holds either a Storage download URL or an
+  /// inline base64 data URI, and printing the raw value filled the screen
+  /// with hundreds of kilobytes of unreadable text.
+  static String _photoLabel(BeautyProduct product) {
+    final path = product.imagePath;
+    if (path.startsWith('http')) {
+      return 'Synced to your cloud storage';
+    }
+    if (path.startsWith('data:image')) {
+      final kb = (path.length * 3 / 4 / 1024).round();
+      return 'Saved on this device (about $kb KB)';
+    }
+    return path;
+  }
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
@@ -158,7 +175,7 @@ class ProductDetailScreen extends StatelessWidget {
                         '${product.scanSource} - ${(product.scanConfidence * 100).round()}%',
                   ),
                 if (product.imagePath.isNotEmpty)
-                  DetailRow(label: 'Photo reference', value: product.imagePath),
+                  DetailRow(label: 'Photo', value: _photoLabel(product)),
                 if (product.notes.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   Text(

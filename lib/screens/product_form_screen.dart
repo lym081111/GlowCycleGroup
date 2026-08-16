@@ -42,11 +42,14 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   /// Capture settings for every product photo.
   ///
   /// Ingredient lists, batch codes, and PAO marks are printed small, and both
-  /// ML Kit OCR and Gemini read the same file the user picked. Capturing at
-  /// 1200px/70% quality destroyed exactly that detail, so the scan is only as
-  /// good as these numbers.
-  static const _photoMaxWidth = 2048.0;
-  static const _photoQuality = 92;
+  /// ML Kit OCR and Gemini read the same file the user picked, so 1200px/70%
+  /// destroyed exactly the detail the scan depends on.
+  ///
+  /// These are a compromise, not a maximum. Each photo is also base64-encoded
+  /// into the Gemini request, and at 2048px/92% a three-photo scan built a
+  /// multi-megabyte upload that aborted mid-flight on mobile connections.
+  static const _photoMaxWidth = 1600.0;
+  static const _photoQuality = 85;
 
   /// Ceiling for a base64 photo stored inline on the product record.
   ///
@@ -55,12 +58,15 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   /// document limit.
   static const _maxInlinePhotoChars = 700 * 1024;
 
+  /// Upper bound on photos per scan, so a multi-photo request stays within a
+  /// sensible token budget.
+  static const _maxScanPhotos = 4;
+
   final _formKey = GlobalKey<FormState>();
   final _picker = ImagePicker();
   late final TextEditingController _nameController;
   late final TextEditingController _brandController;
   late final TextEditingController _expiryController;
-  late final TextEditingController _photoController;
   late final TextEditingController _notesController;
   late final TextEditingController _ingredientsController;
   late final TextEditingController _batchController;
@@ -71,12 +77,32 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   DateTime? _directExpiryDate;
   late String _category;
   late String _status;
-  Uint8List? _photoPreviewBytes;
-  String? _lastPickedPhotoPath;
+
+  /// Every photo captured for this product.
+  ///
+  /// The first is kept as the product image; all of them are sent to the
+  /// scanner together, so the front of the box can supply name and brand
+  /// while the back supplies the ingredient list and batch code.
+  final _scanPhotos = <_ScanPhoto>[];
+
+  /// Image already saved on the product being edited, shown until the user
+  /// captures new ones. May be a download URL or an inline data URI.
+  var _existingImagePath = '';
+
   var _scanning = false;
   var _saving = false;
   var _scanConfidence = 0.0;
   var _scanSource = 'manual';
+
+  /// Bytes for the large preview: the first new photo, else whatever was
+  /// already saved on the product.
+  Uint8List? get _previewBytes => _scanPhotos.isNotEmpty
+      ? _scanPhotos.first.bytes
+      : decodeProductImage(_existingImagePath);
+
+  /// What gets written to [BeautyProduct.imagePath] on save.
+  String get _storedImagePath =>
+      _scanPhotos.isNotEmpty ? _scanPhotos.first.dataUri : _existingImagePath;
 
   @override
   void initState() {
@@ -87,7 +113,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     _expiryController = TextEditingController(
       text: (product?.expiryMonths ?? 12).toString(),
     );
-    _photoController = TextEditingController(text: product?.imagePath ?? '');
+    _existingImagePath = product?.imagePath ?? '';
     _notesController = TextEditingController(text: product?.notes ?? '');
     _ingredientsController = TextEditingController(
       text: product?.ingredients.join(', ') ?? '',
@@ -96,7 +122,6 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     _priceController = TextEditingController(
       text: product?.price == null ? '' : product!.price!.toStringAsFixed(2),
     );
-    _photoPreviewBytes = decodeProductImage(product?.imagePath ?? '');
     _purchaseDate = product?.purchaseDate ?? DateTime.now();
     _openingDate = product?.openingDate ?? DateTime.now();
     _manufactureDate = product?.manufactureDate;
@@ -114,7 +139,6 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     _nameController.dispose();
     _brandController.dispose();
     _expiryController.dispose();
-    _photoController.dispose();
     _notesController.dispose();
     _ingredientsController.dispose();
     _batchController.dispose();
@@ -189,7 +213,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                 color: Colors.white.withValues(alpha: 0.86),
                               ),
                             ),
-                            child: _photoPreviewBytes == null
+                            child: _previewBytes == null
                                 ? Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
@@ -209,13 +233,21 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                     ],
                                   )
                                 : Image.memory(
-                                    _photoPreviewBytes!,
+                                    _previewBytes!,
                                     fit: BoxFit.cover,
                                     width: double.infinity,
                                     height: double.infinity,
                                   ),
                           ),
                         ),
+                        if (_scanPhotos.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          _ScanPhotoStrip(
+                            photos: _scanPhotos,
+                            onRemove: (index) =>
+                                setState(() => _scanPhotos.removeAt(index)),
+                          ),
+                        ],
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -238,13 +270,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                         ),
                         const SizedBox(height: 8),
                         FilledButton.icon(
-                          onPressed: _scanning
-                              ? null
-                              : () => _scanPhotoWithAi(
-                                  _lastPickedPhotoPath == null
-                                      ? ImageSource.camera
-                                      : null,
-                                ),
+                          onPressed: _scanning ? null : _scanPhotoWithAi,
                           icon: _scanning
                               ? const SizedBox(
                                   width: 16,
@@ -257,9 +283,9 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                           label: Text(
                             _scanning
                                 ? 'Scanning...'
-                                : _lastPickedPhotoPath == null
+                                : _scanPhotos.isEmpty
                                 ? 'AI scan'
-                                : 'Extract details',
+                                : 'Extract from ${_scanPhotos.length} photo${_scanPhotos.length == 1 ? '' : 's'}',
                           ),
                           style: FilledButton.styleFrom(
                             minimumSize: const Size.fromHeight(42),
@@ -567,7 +593,15 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     );
   }
 
+  /// Adds a photo to [_scanPhotos].
+  ///
+  /// Photos accumulate rather than replace, so the user can shoot the front
+  /// of the package and then the ingredient panel on the back.
   Future<void> _pickProductPhoto(ImageSource source) async {
+    if (_scanPhotos.length >= _maxScanPhotos) {
+      _showFormMessage('You can attach up to $_maxScanPhotos photos.');
+      return;
+    }
     try {
       final picked = await _picker.pickImage(
         source: source,
@@ -582,9 +616,13 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
         return;
       }
       setState(() {
-        _photoPreviewBytes = bytes;
-        _lastPickedPhotoPath = picked.path;
-        _photoController.text = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+        _scanPhotos.add(
+          _ScanPhoto(
+            path: picked.path,
+            dataUri: 'data:image/jpeg;base64,${base64Encode(bytes)}',
+            bytes: bytes,
+          ),
+        );
       });
     } catch (error) {
       if (!mounted) {
@@ -599,46 +637,40 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     }
   }
 
-  Future<void> _scanPhotoWithAi(ImageSource? sourceIfMissing) async {
-    try {
-      String? imagePath = _lastPickedPhotoPath;
-      if (imagePath == null && sourceIfMissing != null) {
-        final picked = await _picker.pickImage(
-          source: sourceIfMissing,
-          maxWidth: _photoMaxWidth,
-          imageQuality: _photoQuality,
-        );
-        if (picked == null) {
-          return;
-        }
-        final bytes = await picked.readAsBytes();
-        setState(() {
-          _photoPreviewBytes = bytes;
-          _lastPickedPhotoPath = picked.path;
-          _photoController.text =
-              'data:image/jpeg;base64,${base64Encode(bytes)}';
-        });
-        imagePath = picked.path;
-      }
-      if (imagePath == null) {
-        _showFormMessage('Choose a product photo first.');
+  /// Reads every attached photo in one pass.
+  ///
+  /// Both outcomes of the review sheet fill the form; the difference is only
+  /// the follow-up message. Discarding a scan means dismissing the sheet, so
+  /// the extracted values are never silently thrown away.
+  Future<void> _scanPhotoWithAi() async {
+    if (_scanPhotos.isEmpty) {
+      await _pickProductPhoto(ImageSource.camera);
+      if (_scanPhotos.isEmpty) {
         return;
       }
+    }
 
+    try {
       setState(() => _scanning = true);
-      final result = await ProductScanService(
-        store: widget.store,
-      ).scan(imagePath: imagePath, imageDataUri: _photoController.text);
+      final result = await ProductScanService(store: widget.store).scan(
+        photos: [
+          for (final photo in _scanPhotos)
+            (path: photo.path, dataUri: photo.dataUri),
+        ],
+      );
       if (!mounted) {
         return;
       }
-      final shouldApply = await _showScanReview(result);
-      if (shouldApply == true && mounted) {
-        _applyScanResult(result);
-        _showFormMessage(
-          'Scan details added. Please check every field before saving.',
-        );
+      final choice = await _showScanReview(result);
+      if (choice == null || !mounted) {
+        return;
       }
+      _applyScanResult(result);
+      _showFormMessage(
+        choice == _ScanReviewChoice.edit
+            ? 'Details filled in below. Change anything the scan got wrong.'
+            : 'Scan applied. Please check every field before saving.',
+      );
     } catch (error) {
       _showFormMessage('Unable to scan product details: $error');
     } finally {
@@ -683,10 +715,11 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     // every rescan. The user reviews that text in the scan sheet instead.
   }
 
-  Future<bool?> _showScanReview(ProductScanResult result) {
-    return showModalBottomSheet<bool>(
+  Future<_ScanReviewChoice?> _showScanReview(ProductScanResult result) {
+    return showModalBottomSheet<_ScanReviewChoice>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (context) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         child: Column(
@@ -721,8 +754,22 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
               label: 'Confidence',
               value: '${(result.confidence * 100).round()}%',
             ),
+            DetailRow(
+              label: 'Read by',
+              value: result.source == 'gemini-vision'
+                  ? 'Gemini vision'
+                  : 'On-device OCR only',
+            ),
             DetailRow(label: 'Text read', value: result.rawTextPreview),
-            if (result.confidence < 0.72) ...[
+            if (result.source != 'gemini-vision') ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Gemini could not be reached, so these fields came from '
+                'on-device text matching alone. Expect gaps, and check every '
+                'value before saving.',
+                style: TextStyle(color: secondary, fontWeight: FontWeight.w700),
+              ),
+            ] else if (result.confidence < 0.72) ...[
               const SizedBox(height: 8),
               const Text(
                 'Some packaging text was unclear. Check the photo and edit any field that looks wrong.',
@@ -730,18 +777,30 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
               ),
             ],
             const SizedBox(height: 12),
+            Text(
+              'Both options fill the form and nothing is saved yet, so every '
+              'field stays editable. Swipe this sheet down to discard the scan.',
+              style: TextStyle(
+                color: ink.withValues(alpha: 0.62),
+                height: 1.3,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(false),
+                    onPressed: () =>
+                        Navigator.of(context).pop(_ScanReviewChoice.edit),
                     child: const Text('Edit manually'),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: FilledButton(
-                    onPressed: () => Navigator.of(context).pop(true),
+                    onPressed: () =>
+                        Navigator.of(context).pop(_ScanReviewChoice.apply),
                     child: const Text('Apply scan'),
                   ),
                 ),
@@ -774,7 +833,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       final now = DateTime.now();
       final existing = widget.product;
       final id = existing?.id ?? now.microsecondsSinceEpoch.toString();
-      final inlinePhoto = _photoController.text.trim();
+      final inlinePhoto = _storedImagePath.trim();
       final uploadedImagePath = await widget.store.uploadProductPhoto(
         productId: id,
         dataUri: inlinePhoto,
@@ -873,6 +932,99 @@ class _FormPanel extends StatelessWidget {
           const SizedBox(height: 12),
           child,
         ],
+      ),
+    );
+  }
+}
+
+/// One captured photo, held in memory until the product is saved.
+class _ScanPhoto {
+  const _ScanPhoto({
+    required this.path,
+    required this.dataUri,
+    required this.bytes,
+  });
+
+  /// On-device file path, used by ML Kit for on-device OCR.
+  final String path;
+
+  /// Inline `data:image/jpeg;base64,...` form, sent to Gemini and stored on
+  /// the product when it is the first photo.
+  final String dataUri;
+
+  final Uint8List bytes;
+}
+
+/// What the user chose in the scan review sheet.
+///
+/// Both values fill the form. Dismissing the sheet returns null, which is the
+/// only way to discard a scan.
+enum _ScanReviewChoice { apply, edit }
+
+/// Thumbnails of every attached photo, each removable.
+class _ScanPhotoStrip extends StatelessWidget {
+  const _ScanPhotoStrip({required this.photos, required this.onRemove});
+
+  final List<_ScanPhoto> photos;
+  final ValueChanged<int> onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 56,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: photos.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 6),
+        itemBuilder: (context, index) {
+          return Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.memory(
+                  photos[index].bytes,
+                  width: 56,
+                  height: 56,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              Positioned(
+                top: 0,
+                right: 0,
+                child: GestureDetector(
+                  onTap: () => onRemove(index),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: ink.withValues(alpha: 0.7),
+                      shape: BoxShape.circle,
+                    ),
+                    padding: const EdgeInsets.all(2),
+                    child: const Icon(
+                      Icons.close,
+                      size: 12,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+              if (index == 0)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    color: ink.withValues(alpha: 0.55),
+                    padding: const EdgeInsets.symmetric(vertical: 1),
+                    child: const Text(
+                      'Main',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white, fontSize: 8),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }

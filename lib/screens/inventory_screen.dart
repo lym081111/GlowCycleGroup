@@ -48,7 +48,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
         ),
         const SizedBox(height: 14),
         Container(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [Color(0xFFFFF5F0), Color(0xFFE7F2E7)],
@@ -60,43 +60,34 @@ class _InventoryScreenState extends State<InventoryScreen> {
           ),
           child: Row(
             children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.78),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.auto_awesome, color: primary),
-              ),
-              const SizedBox(width: 12),
+              const Icon(Icons.auto_awesome, color: primary, size: 18),
+              const SizedBox(width: 8),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${filtered.length} item(s) on display',
-                      style: const TextStyle(
-                        color: ink,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 18,
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '${filtered.length} item(s)',
+                        style: const TextStyle(
+                          color: ink,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Smart sort highlights products to finish first.',
-                      style: TextStyle(
-                        color: ink.withValues(alpha: 0.64),
-                        height: 1.3,
+                      TextSpan(
+                        text: ' - sorted by what to finish first',
+                        style: TextStyle(color: ink.withValues(alpha: 0.62)),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13),
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 12),
         TextField(
           onChanged: (value) => setState(() => _query = value),
           decoration: const InputDecoration(
