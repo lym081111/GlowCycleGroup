@@ -11,6 +11,7 @@ class RecycleLookup {
     required this.points,
     required this.originLabel,
     required this.radiusKm,
+    required this.nearRadiusKm,
     this.errorNote,
   });
 
@@ -21,8 +22,11 @@ class RecycleLookup {
   /// Human-readable description of the search centre.
   final String originLabel;
 
-  /// How far out the search reached.
+  /// How far out the search actually reached to find [points].
   final int radiusKm;
+
+  /// The local radius the search hoped to satisfy.
+  final int nearRadiusKm;
 
   /// Set only when the service could not be reached, which is different from
   /// the service answering with nothing.
@@ -30,6 +34,10 @@ class RecycleLookup {
 
   bool get failed => errorNote != null;
 
-  /// True when the search succeeded and the area genuinely has nothing mapped.
+  /// True when nothing was mapped nearby and the search had to reach further
+  /// out to find anything at all.
+  bool get expanded => points.isNotEmpty && radiusKm > nearRadiusKm;
+
+  /// True when even the widest search found nothing.
   bool get isUnmapped => !failed && points.isEmpty;
 }

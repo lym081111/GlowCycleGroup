@@ -15,10 +15,17 @@ class RecycleService {
   static const utarLat = 4.3380;
   static const utarLng = 101.1430;
 
-  /// OpenStreetMap has no recycling amenity mapped within 18 km of the UTAR
-  /// Kampar reference, so the original radius could only ever return an empty
-  /// set there. The nearest mapped point sits about 30 km out.
-  static const searchRadiusMetres = 50000;
+  /// Radii tried in order, nearest first.
+  ///
+  /// OpenStreetMap coverage is thin outside the larger Malaysian cities, so a
+  /// single small radius returns nothing at all around Kampar. Widening in
+  /// steps means a user with nothing nearby still sees the closest points that
+  /// exist, instead of an empty screen.
+  static const searchRadiiMetres = [25000, 100000, 400000];
+
+  /// Overpass rejects the Dart HTTP client's default user agent with 406, and
+  /// its usage policy asks callers to identify themselves.
+  static const _userAgent = 'GlowCycle/1.0 (UTAR UCCD3223 student project)';
 
   /// Reads the device position, or null when location is off, declined, or
   /// too slow to be worth waiting for.
@@ -64,84 +71,103 @@ class RecycleService {
     final origin = usingDevice
         ? 'your current location'
         : 'the UTAR Kampar reference';
-    final radiusKm = (searchRadiusMetres / 1000).round();
+    final nearRadiusKm = (searchRadiiMetres.first / 1000).round();
 
-    final query =
-        '''
-[out:json][timeout:25];
-(
-  node["amenity"="recycling"](around:$searchRadiusMetres,$lat,$lng);
-  way["amenity"="recycling"](around:$searchRadiusMetres,$lat,$lng);
-  relation["amenity"="recycling"](around:$searchRadiusMetres,$lat,$lng);
-);
-out center 12;
-''';
-
-    try {
-      final response = await http
-          .post(
-            Uri.parse('https://overpass-api.de/api/interpreter'),
-            headers: {'Content-Type': 'text/plain'},
-            body: query,
-          )
-          .timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) {
+    for (final radius in searchRadiiMetres) {
+      final radiusKm = (radius / 1000).round();
+      try {
+        final response = await http
+            .post(
+              Uri.parse('https://overpass-api.de/api/interpreter'),
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'User-Agent': _userAgent,
+              },
+              body: {'data': _query(radius, lat, lng)},
+            )
+            .timeout(const Duration(seconds: 30));
+        if (response.statusCode != 200) {
+          return RecycleLookup(
+            points: const [],
+            originLabel: origin,
+            radiusKm: radiusKm,
+            nearRadiusKm: nearRadiusKm,
+            errorNote: 'OpenStreetMap replied ${response.statusCode}.',
+          );
+        }
+        final points = _parsePoints(response.body, lat, lng);
+        if (points.isEmpty && radius != searchRadiiMetres.last) {
+          // Nothing this close; reach further before giving up.
+          continue;
+        }
+        return RecycleLookup(
+          points: points.take(8).toList(),
+          originLabel: origin,
+          radiusKm: radiusKm,
+          nearRadiusKm: nearRadiusKm,
+        );
+      } catch (exception) {
+        if (kDebugMode) {
+          debugPrint('Overpass lookup failed at ${radiusKm}km: $exception');
+        }
         return RecycleLookup(
           points: const [],
           originLabel: origin,
           radiusKm: radiusKm,
-          errorNote: 'OpenStreetMap replied ${response.statusCode}.',
+          nearRadiusKm: nearRadiusKm,
+          errorNote: 'Could not reach OpenStreetMap.',
         );
       }
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final elements = data['elements'] as List<dynamic>? ?? [];
-      final points = elements.map((element) {
-        final item = element as Map<String, dynamic>;
-        final tags = (item['tags'] as Map?)?.cast<String, dynamic>() ?? {};
-        final pointLat = (item['lat'] ?? item['center']?['lat'] ?? lat)
-            .toDouble();
-        final pointLon = (item['lon'] ?? item['center']?['lon'] ?? lng)
-            .toDouble();
-        final name = (tags['name'] ?? 'Community Recycling Point').toString();
-        final address = [
-          tags['addr:street'],
-          tags['addr:city'],
-          tags['addr:postcode'],
-        ].whereType<String>().where((value) => value.isNotEmpty).join(', ');
-        return RecyclePoint(
-          id: item['id'].toString(),
-          name: name,
-          address: address.isEmpty
-              ? 'OpenStreetMap recycling location'
-              : address,
-          acceptedItems: _acceptedItems(tags),
-          openingHours:
-              (tags['opening_hours'] ?? 'Check with venue before visiting')
-                  .toString(),
-          latitude: pointLat,
-          longitude: pointLon,
-          distanceKm: distanceKm(lat, lng, pointLat, pointLon),
-        );
-      }).toList()..sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
-
-      // An empty result is reported as it stands. The service answered; this
-      // area simply has nothing mapped, which is worth showing honestly.
-      return RecycleLookup(
-        points: points.take(8).toList(),
-        originLabel: origin,
-        radiusKm: radiusKm,
-      );
-    } catch (exception) {
-      if (kDebugMode) {
-        debugPrint('Overpass lookup failed: $exception');
-      }
-      return RecycleLookup(
-        points: const [],
-        originLabel: origin,
-        radiusKm: radiusKm,
-        errorNote: 'Could not reach OpenStreetMap.',
-      );
     }
+
+    return RecycleLookup(
+      points: const [],
+      originLabel: origin,
+      radiusKm: (searchRadiiMetres.last / 1000).round(),
+      nearRadiusKm: nearRadiusKm,
+    );
+  }
+
+  static String _query(int radius, double lat, double lng) {
+    return '''
+[out:json][timeout:30];
+(
+  node["amenity"="recycling"](around:$radius,$lat,$lng);
+  way["amenity"="recycling"](around:$radius,$lat,$lng);
+  relation["amenity"="recycling"](around:$radius,$lat,$lng);
+);
+out center 60;
+''';
+  }
+
+  static List<RecyclePoint> _parsePoints(String body, double lat, double lng) {
+    final data = jsonDecode(body) as Map<String, dynamic>;
+    final elements = data['elements'] as List<dynamic>? ?? [];
+    return elements.map((element) {
+      final item = element as Map<String, dynamic>;
+      final tags = (item['tags'] as Map?)?.cast<String, dynamic>() ?? {};
+      final pointLat = (item['lat'] ?? item['center']?['lat'] ?? lat)
+          .toDouble();
+      final pointLon = (item['lon'] ?? item['center']?['lon'] ?? lng)
+          .toDouble();
+      final address = [
+        tags['addr:street'],
+        tags['addr:city'],
+        tags['addr:postcode'],
+      ].whereType<String>().where((value) => value.isNotEmpty).join(', ');
+      return RecyclePoint(
+        id: item['id'].toString(),
+        name: (tags['name'] ?? 'Community Recycling Point').toString(),
+        address: address.isEmpty ? 'OpenStreetMap recycling location' : address,
+        acceptedItems: _acceptedItems(tags),
+        openingHours:
+            (tags['opening_hours'] ?? 'Check with venue before visiting')
+                .toString(),
+        latitude: pointLat,
+        longitude: pointLon,
+        distanceKm: distanceKm(lat, lng, pointLat, pointLon),
+      );
+    }).toList()..sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
   }
 
   /// Turns the OSM recycling tags into a readable list of accepted materials.

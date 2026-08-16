@@ -173,7 +173,11 @@ class _SourceBanner extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  ok ? 'Live OpenStreetMap data' : 'Search unavailable',
+                  !ok
+                      ? 'Search unavailable'
+                      : lookup.expanded
+                      ? 'None near you'
+                      : 'Live OpenStreetMap data',
                   style: const TextStyle(
                     color: ink,
                     fontWeight: FontWeight.w900,
@@ -182,8 +186,13 @@ class _SourceBanner extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   lookup.errorNote ??
-                      '$count point(s) found within ${lookup.radiusKm} km of '
-                          '${lookup.originLabel}, via the Overpass API.',
+                      (lookup.expanded
+                          ? 'No recycling point is mapped within '
+                                '${lookup.nearRadiusKm} km of ${lookup.originLabel}. '
+                                'These are the $count nearest in the country, up to '
+                                '${lookup.radiusKm} km away.'
+                          : '$count point(s) found within ${lookup.radiusKm} km of '
+                                '${lookup.originLabel}, via the Overpass API.'),
                   style: TextStyle(
                     color: ink.withValues(alpha: 0.72),
                     height: 1.3,
