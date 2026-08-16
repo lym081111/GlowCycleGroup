@@ -45,12 +45,26 @@ class RecycleService {
           permission == LocationPermission.deniedForever) {
         return null;
       }
-      return await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 12),
-        ),
-      );
+
+      // Low accuracy is deliberate: the search covers 25km, so a fix good to
+      // a city block is ample, and it resolves from the network in seconds
+      // where a GPS fix can take far longer indoors.
+      try {
+        return await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.low,
+            timeLimit: Duration(seconds: 10),
+          ),
+        );
+      } catch (exception) {
+        // A slow fix used to drop the search back to campus, tens of
+        // kilometres away, which silently changed the results. The last known
+        // position is far closer to the truth than that.
+        if (kDebugMode) {
+          debugPrint('Fresh fix failed ($exception), trying last known.');
+        }
+        return await Geolocator.getLastKnownPosition();
+      }
     } catch (exception) {
       if (kDebugMode) {
         debugPrint('Location unavailable, using campus reference: $exception');
@@ -59,12 +73,30 @@ class RecycleService {
     }
   }
 
+  /// Last successful lookup, reused briefly so reopening the screen does not
+  /// fire another round of queries.
+  ///
+  /// Overpass rate limits per IP, and a widening search costs up to three
+  /// requests, so repeated visits were earning 429s.
+  static RecycleLookup? _cached;
+  static DateTime? _cachedAt;
+  static const _cacheLifetime = Duration(minutes: 5);
+
   /// Searches around [latitude]/[longitude], or the campus reference when
   /// they are null.
   static Future<RecycleLookup> fetchRecyclePoints({
     double? latitude,
     double? longitude,
+    bool forceRefresh = false,
   }) async {
+    final cached = _cached;
+    final cachedAt = _cachedAt;
+    if (!forceRefresh &&
+        cached != null &&
+        cachedAt != null &&
+        DateTime.now().difference(cachedAt) < _cacheLifetime) {
+      return cached;
+    }
     final usingDevice = latitude != null && longitude != null;
     final lat = latitude ?? utarLat;
     final lng = longitude ?? utarLng;
@@ -76,23 +108,20 @@ class RecycleService {
     for (final radius in searchRadiiMetres) {
       final radiusKm = (radius / 1000).round();
       try {
-        final response = await http
-            .post(
-              Uri.parse('https://overpass-api.de/api/interpreter'),
-              headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'User-Agent': _userAgent,
-              },
-              body: {'data': _query(radius, lat, lng)},
-            )
-            .timeout(const Duration(seconds: 30));
+        var response = await _post(radius, lat, lng);
+        if (response.statusCode == 429 || response.statusCode == 504) {
+          // Overpass sheds load rather than queueing. One patient retry
+          // clears most of these.
+          await Future<void>.delayed(const Duration(seconds: 4));
+          response = await _post(radius, lat, lng);
+        }
         if (response.statusCode != 200) {
           return RecycleLookup(
             points: const [],
             originLabel: origin,
             radiusKm: radiusKm,
             nearRadiusKm: nearRadiusKm,
-            errorNote: 'OpenStreetMap replied ${response.statusCode}.',
+            errorNote: _describeStatus(response.statusCode),
           );
         }
         final points = _parsePoints(response.body, lat, lng);
@@ -100,12 +129,15 @@ class RecycleService {
           // Nothing this close; reach further before giving up.
           continue;
         }
-        return RecycleLookup(
+        final lookup = RecycleLookup(
           points: points.take(8).toList(),
           originLabel: origin,
           radiusKm: radiusKm,
           nearRadiusKm: nearRadiusKm,
         );
+        _cached = lookup;
+        _cachedAt = DateTime.now();
+        return lookup;
       } catch (exception) {
         if (kDebugMode) {
           debugPrint('Overpass lookup failed at ${radiusKm}km: $exception');
@@ -128,13 +160,38 @@ class RecycleService {
     );
   }
 
+  static Future<http.Response> _post(int radius, double lat, double lng) {
+    return http
+        .post(
+          Uri.parse('https://overpass-api.de/api/interpreter'),
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': _userAgent,
+          },
+          body: {'data': _query(radius, lat, lng)},
+        )
+        .timeout(const Duration(seconds: 30));
+  }
+
+  /// Says what a non-200 actually means, since the raw number tells the user
+  /// nothing about whether waiting will help.
+  static String _describeStatus(int code) {
+    if (code == 429) {
+      return 'OpenStreetMap is limiting requests right now. '
+          'Wait a moment and search again.';
+    }
+    if (code == 504) {
+      return 'OpenStreetMap took too long to answer. Try again shortly.';
+    }
+    return 'OpenStreetMap replied $code.';
+  }
+
   static String _query(int radius, double lat, double lng) {
     return '''
 [out:json][timeout:30];
 (
   node["amenity"="recycling"](around:$radius,$lat,$lng);
   way["amenity"="recycling"](around:$radius,$lat,$lng);
-  relation["amenity"="recycling"](around:$radius,$lat,$lng);
 );
 out center 60;
 ''';

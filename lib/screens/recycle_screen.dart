@@ -60,6 +60,8 @@ class _RecycleScreenState extends State<RecycleScreen> {
     final result = await RecycleService.fetchRecyclePoints(
       latitude: position?.latitude,
       longitude: position?.longitude,
+      // Tapping refresh should genuinely re-query, not reuse the cache.
+      forceRefresh: announce,
     );
     if (!mounted) {
       return;
