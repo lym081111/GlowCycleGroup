@@ -34,7 +34,8 @@ class EcoPointsScreen extends StatefulWidget {
 }
 
 class _EcoPointsScreenState extends State<EcoPointsScreen> {
-  /// 0 = badges, 1 = recent actions.
+  /// 0 = recent eco actions, 1 = badges. History leads because it changes
+  /// every time the user does something, while badges rarely move.
   var _panel = 0;
 
   void _select(int index) {
@@ -138,11 +139,11 @@ class _EcoPointsScreenState extends State<EcoPointsScreen> {
                   );
                 },
                 child: _panel == 0
-                    ? _BadgesPanel(key: const ValueKey(0), badges: badges)
-                    : _ActionsPanel(
-                        key: const ValueKey(1),
+                    ? _ActionsPanel(
+                        key: const ValueKey(0),
                         actions: widget.actions,
-                      ),
+                      )
+                    : _BadgesPanel(key: const ValueKey(1), badges: badges),
               ),
             ),
           ),
@@ -170,12 +171,12 @@ class _PanelSelector extends StatelessWidget {
       child: Row(
         children: [
           _SegmentButton(
-            label: 'Badges unlocked',
+            label: 'Recent eco actions',
             active: selected == 0,
             onTap: () => onSelected(0),
           ),
           _SegmentButton(
-            label: 'Recent actions',
+            label: 'Badges unlocked',
             active: selected == 1,
             onTap: () => onSelected(1),
           ),
