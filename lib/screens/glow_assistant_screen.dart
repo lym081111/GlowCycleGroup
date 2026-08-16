@@ -22,8 +22,11 @@ class GlowAssistantScreen extends StatefulWidget {
   State<GlowAssistantScreen> createState() => _GlowAssistantScreenState();
 }
 
-class _GlowAssistantScreenState extends State<GlowAssistantScreen> {
+class _GlowAssistantScreenState extends State<GlowAssistantScreen>
+    with WidgetsBindingObserver {
   final _controller = TextEditingController();
+  final _scrollController = ScrollController();
+  final _inputFocus = FocusNode();
   final _messages = <AssistantChatMessage>[
     AssistantChatMessage(
       role: 'assistant',
@@ -34,9 +37,49 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen> {
   var _sending = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _inputFocus.addListener(() {
+      if (_inputFocus.hasFocus) {
+        _scrollToLatest();
+      }
+    });
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _inputFocus.dispose();
+    _scrollController.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeMetrics() {
+    // The keyboard opening shrinks the viewport after focus is granted, which
+    // would otherwise push the newest reply out of sight.
+    if (_inputFocus.hasFocus) {
+      _scrollToLatest();
+    }
+  }
+
+  /// Keeps the newest bubble in view.
+  ///
+  /// Deferred to after the frame so the list has been laid out with the new
+  /// message, or with the shorter viewport, before the extent is measured.
+  void _scrollToLatest() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) {
+        return;
+      }
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   Future<void> _send() async {
@@ -52,6 +95,8 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen> {
       _messages.add(AssistantChatMessage(role: 'user', text: text));
       _sending = true;
     });
+    // Reveal the question and the thinking bubble straight away.
+    _scrollToLatest();
     await widget.store.saveChatMessage(role: 'user', text: text);
     final reply = await widget.store.askAssistant(
       message: text,
@@ -72,6 +117,7 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen> {
       );
       _sending = false;
     });
+    _scrollToLatest();
     await widget.store.saveChatMessage(
       role: 'assistant',
       text: '${reply.message}\n\n${reply.safetyNote}',
@@ -122,6 +168,7 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen> {
         ),
         Expanded(
           child: ListView.builder(
+            controller: _scrollController,
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
             itemCount: _messages.length + (_sending ? 1 : 0),
             itemBuilder: (context, index) {
@@ -150,6 +197,7 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen> {
                 Expanded(
                   child: TextField(
                     controller: _controller,
+                    focusNode: _inputFocus,
                     minLines: 1,
                     maxLines: 4,
                     textInputAction: TextInputAction.send,
