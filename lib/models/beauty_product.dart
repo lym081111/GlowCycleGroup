@@ -7,6 +7,7 @@ class BeautyProduct {
     required this.name,
     required this.brand,
     required this.category,
+    this.productType = '',
     required this.purchaseDate,
     required this.openingDate,
     required this.expiryMonths,
@@ -28,6 +29,11 @@ class BeautyProduct {
   final String name;
   final String brand;
   final String category;
+
+  /// A user-reviewed, specific label such as "Moisturizer" or "Eye drops".
+  /// Categories are intentionally broad, so Glow Assistant uses this to
+  /// distinguish products within a category.
+  final String productType;
   final DateTime purchaseDate;
   final DateTime openingDate;
   final int expiryMonths;
@@ -99,12 +105,42 @@ class BeautyProduct {
     return !excluded.contains(resolvedStatus(now));
   }
 
+  /// Whether this item is explicitly suitable for a dry-skin hydration step.
+  /// A typed product type takes precedence; keyword inference supports older
+  /// products created before the Product type field existed.
+  bool get isHydratingProduct {
+    final text = '$name $productType $category ${ingredients.join(' ')} $notes'
+        .toLowerCase();
+    // Eye lubricants hydrate the eye surface, not facial skin or lips.
+    if (RegExp(
+      r'\b(?:eye\s*drop|eyedrop|artificial\s*tear|ocular\s*lubricant|systane)\b',
+    ).hasMatch(text)) {
+      return false;
+    }
+    return text.contains('moistur') ||
+        text.contains('hydration') ||
+        text.contains('hyaluronic') ||
+        text.contains('ceramide') ||
+        text.contains('panthenol') ||
+        text.contains('glycerin') ||
+        text.contains('centella') ||
+        text.contains('squalane') ||
+        text.contains('barrier');
+  }
+
+  /// A user-supplied product type gives Gemini useful context without forcing
+  /// the app to decide which product belongs in a routine.
+  List<String> get assistantTags => [
+    if (productType.trim().isNotEmpty) 'type:${productType.trim()}',
+  ];
+
   BeautyProduct copyWith({String? status, DateTime? updatedAt}) {
     return BeautyProduct(
       id: id,
       name: name,
       brand: brand,
       category: category,
+      productType: productType,
       purchaseDate: purchaseDate,
       openingDate: openingDate,
       expiryMonths: expiryMonths,
@@ -128,6 +164,7 @@ class BeautyProduct {
     'name': name,
     'brand': brand,
     'category': category,
+    'productType': productType,
     'purchaseDate': purchaseDate.toIso8601String(),
     'openingDate': openingDate.toIso8601String(),
     'expiryMonths': expiryMonths,
@@ -151,10 +188,12 @@ class BeautyProduct {
     'name': name,
     'brand': brand,
     'category': category,
+    'productType': productType,
     'status': resolvedStatus(DateTime.now()),
     'expiryDate': expiryDate.toIso8601String(),
     'ingredients': ingredients,
     'notes': notes,
+    'assistantTags': assistantTags,
   };
 
   factory BeautyProduct.fromJson(Map<String, dynamic> json) {
@@ -163,6 +202,7 @@ class BeautyProduct {
       name: json['name'] as String,
       brand: json['brand'] as String,
       category: json['category'] as String,
+      productType: json['productType'] as String? ?? '',
       purchaseDate: DateTime.parse(json['purchaseDate'] as String),
       openingDate: DateTime.parse(json['openingDate'] as String),
       expiryMonths: json['expiryMonths'] as int,

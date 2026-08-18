@@ -62,6 +62,12 @@ class GlowStore {
       .doc(user.uid)
       .collection('actions');
 
+  CollectionReference<Map<String, dynamic>> get _chatsRef => FirebaseFirestore
+      .instance
+      .collection('users')
+      .doc(user.uid)
+      .collection('chats');
+
   /// Why the last [load] could not reach Firestore, or null if it did.
   ///
   /// The UI reports this so a shelf served from local storage is never
@@ -342,9 +348,8 @@ ${ocrText.isEmpty ? '(No readable OCR text.)' : ocrText}
   /// Answers a skincare question using the user's own shelf.
   ///
   /// [history] is the conversation so far, oldest first, so follow-up
-  /// questions keep their context. Gemini answers are validated by
-  /// [AssistantReply.isSafeFor] and replaced with the offline rule engine if
-  /// they name a product the user does not own.
+  /// questions keep their context. Gemini receives one correction attempt if
+  /// it names a product that is not on the user's usable shelf.
   Future<AssistantReply> askAssistant({
     required String message,
     required List<BeautyProduct> products,
@@ -363,25 +368,44 @@ ${ocrText.isEmpty ? '(No readable OCR text.)' : ocrText}
           inventory: offeredProducts,
           history: history,
         );
-        if (reply.isSafeFor(message, products)) {
+        if (reply.isGroundedInInventory(products)) {
           return reply;
         }
         if (kDebugMode) {
           debugPrint(
-            'Gemini Assistant reply rejected by safety guard; '
+            'Gemini Assistant reply requested an inventory correction; '
             'recommended ${reply.productNames}',
           );
         }
-        return AssistantReply.local(message, products);
+        final correctedReply = await _askGemini(
+          message: message,
+          inventory: offeredProducts,
+          history: history,
+          groundingRetry: true,
+        );
+        if (correctedReply.isGroundedInInventory(products)) {
+          return correctedReply;
+        }
+        return AssistantReply.local(safetyFallback: true);
       } catch (exception) {
         if (kDebugMode) {
           debugPrint('Gemini Assistant fallback: $exception');
         }
-        return AssistantReply.local(message, products);
+        return AssistantReply.local(
+          quotaLimited: _isGeminiQuotaError(exception),
+        );
       }
     }
     _logAiSkipped('Glow Assistant');
-    return AssistantReply.local(message, products);
+    return AssistantReply.local();
+  }
+
+  static bool _isGeminiQuotaError(Object exception) {
+    final text = exception.toString().toLowerCase();
+    return text.contains('quota exceeded') ||
+        text.contains('resource_exhausted') ||
+        text.contains('free_tier_requests') ||
+        text.contains('rate limit');
   }
 
   /// Number of prior turns replayed to Gemini. Enough for a follow-up to make
@@ -392,6 +416,7 @@ ${ocrText.isEmpty ? '(No readable OCR text.)' : ocrText}
     required String message,
     required List<Map<String, dynamic>> inventory,
     required List<AssistantChatMessage> history,
+    bool groundingRetry = false,
   }) async {
     final responseSchema = Schema.object(
       properties: {
@@ -400,32 +425,42 @@ ${ocrText.isEmpty ? '(No readable OCR text.)' : ocrText}
         'safetyNote': Schema.string(),
       },
     );
-    const systemInstruction = '''
-You are Glow Assistant, a cautious beauty inventory helper. Give practical,
-short skincare guidance based only on the shelf inventory supplied with each
-question.
+    final retryInstruction = groundingRetry
+        ? '''
+This is a correction pass. Your previous answer named a product that was not
+an exact match for the current shelf. Re-evaluate the same concern from the
+inventory below and return only real, exact product names in productNames.
+'''
+        : '';
+    final systemInstruction =
+        '''
+You are Glow Assistant, an attentive beauty-inventory assistant. Give
+practical, personalised skincare guidance based on the shelf inventory supplied
+with each question.
 
-Rules:
+Reason privately before answering: identify the concern and body area, assess
+the available products using their user-reviewed productType, ingredients,
+notes, category, and expiry status, then decide whether any product actually
+fits. Do not treat a broad category alone as proof that a product suits a
+particular concern or body area.
+
+Requirements:
 - Reply with the required JSON only.
 - productNames must contain only exact product names from the supplied
   inventory that you actively recommend. Never invent, rename, or recommend a
   product that is not listed.
-- The inventory already excludes expired, finished, and recycled items, so
-  every listed product is usable. Prefer items whose status is "Use Soon":
-  helping the user finish those before they expire is the goal.
+- The inventory already excludes expired, finished, and recycled items.
+- If shelf data is ambiguous, say what information is missing instead of
+  guessing a product's purpose.
 - Give a simple routine with 2 to 4 clearly numbered steps when appropriate.
 - Do not diagnose, claim to treat disease, or make medical guarantees.
 - If symptoms are severe, painful, swollen, infected, involve vision changes,
   or persist, advise a doctor, dermatologist, or optometrist.
-- For eye concerns: never recommend lip products, makeup, fragrance, acids,
-  retinoids, vitamin C, or unlabelled skincare in or near the eye. Recommend an
-  eye drop only when an exact shelf item is clearly an eye drop/lubricant.
-- If no suitable shelf item exists, say so honestly and give low-risk general
-  guidance without naming a product the user does not own.
 - In message, do not mention a named product unless it also appears exactly in
   productNames. Keep the tone supportive and concise.
-- Earlier turns are provided for context. Resolve follow-up questions such as
-  "what about at night?" against what was already discussed.
+- Earlier turns are provided for context. Resolve follow-up questions against
+  what was already discussed.
+$retryInstruction
 ''';
     final model = FirebaseAI.googleAI().generativeModel(
       model: 'gemini-3.5-flash',
@@ -476,19 +511,82 @@ User concern: ${jsonEncode(message)}
   Future<void> saveChatMessage({
     required String role,
     required String text,
+    required DateTime createdAt,
+    String? safetyNote,
+    bool fromFallback = false,
+    bool safetyFallback = false,
+    bool quotaLimited = false,
   }) async {
     if (!_useFirebase) {
       return;
     }
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .collection('chats')
-        .add({
-          'role': role,
-          'text': text,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
+    await _chatsRef.add({
+      'role': role,
+      'text': text,
+      'createdAt': Timestamp.fromDate(createdAt),
+      if (safetyNote != null && safetyNote.isNotEmpty) 'safetyNote': safetyNote,
+      'fromFallback': fromFallback,
+      'safetyFallback': safetyFallback,
+      'quotaLimited': quotaLimited,
+    });
+  }
+
+  /// Returns the current 24-hour conversation and removes older turns.
+  ///
+  /// Firestore is the shared source of truth for authenticated users, so a
+  /// conversation survives navigating away from the Assistant tab and also
+  /// follows the user to another signed-in device.
+  Future<List<AssistantChatMessage>> loadRecentChatMessages() async {
+    if (!_useFirebase) {
+      return const [];
+    }
+    final cutoff = DateTime.now().subtract(const Duration(hours: 24));
+    final cutoffTimestamp = Timestamp.fromDate(cutoff);
+    try {
+      final snapshots = await Future.wait([
+        _chatsRef
+            .where('createdAt', isGreaterThanOrEqualTo: cutoffTimestamp)
+            .orderBy('createdAt')
+            .get()
+            .timeout(_firestoreTimeout),
+        _chatsRef
+            .where('createdAt', isLessThan: cutoffTimestamp)
+            .limit(400)
+            .get()
+            .timeout(_firestoreTimeout),
+      ]);
+      final recent = snapshots[0];
+      final expired = snapshots[1];
+
+      if (expired.docs.isNotEmpty) {
+        final batch = FirebaseFirestore.instance.batch();
+        for (final document in expired.docs) {
+          batch.delete(document.reference);
+        }
+        await batch.commit();
+      }
+
+      return recent.docs.map((document) {
+        final data = document.data();
+        final timestamp = data['createdAt'];
+        return AssistantChatMessage(
+          role: data['role'] as String? ?? 'assistant',
+          text: data['text'] as String? ?? '',
+          createdAt: timestamp is Timestamp
+              ? timestamp.toDate()
+              : DateTime.now(),
+          safetyNote: data['safetyNote'] as String?,
+          fromFallback: data['fromFallback'] as bool? ?? false,
+          safetyFallback: data['safetyFallback'] as bool? ?? false,
+          quotaLimited: data['quotaLimited'] as bool? ?? false,
+        );
+      }).toList();
+    } catch (exception) {
+      if (kDebugMode) {
+        debugPrint('Assistant history could not be loaded: $exception');
+      }
+      return const [];
+    }
   }
 
   /// Copies any shelf saved before Firebase login into Firestore, once.

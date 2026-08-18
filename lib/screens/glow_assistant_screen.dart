@@ -6,8 +6,8 @@ import '../services/glow_store.dart';
 import '../theme/app_colors.dart';
 import '../widgets/layout_widgets.dart';
 
-/// Chat tab. Answers are grounded in the user's own shelf and pass through
-/// the safety guard in [AssistantReply.isSafeFor] before being shown.
+/// Chat tab. Gemini answers are grounded against the user's usable shelf
+/// before being shown.
 class GlowAssistantScreen extends StatefulWidget {
   const GlowAssistantScreen({
     super.key,
@@ -27,24 +27,46 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen>
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final _inputFocus = FocusNode();
-  final _messages = <AssistantChatMessage>[
-    AssistantChatMessage(
-      role: 'assistant',
-      text:
-          'Tell me what your skin feels like today. I will check your current shelf and suggest a simple, safe routine from products you already own.',
-    ),
-  ];
+  final _messages = <AssistantChatMessage>[];
   var _sending = false;
+  var _loadingHistory = true;
+  var _showingWelcome = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _loadRecentConversation();
     _inputFocus.addListener(() {
       if (_inputFocus.hasFocus) {
         _scrollToLatest();
       }
     });
+  }
+
+  Future<void> _loadRecentConversation() async {
+    final history = await widget.store.loadRecentChatMessages();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _messages
+        ..clear()
+        ..addAll(history);
+      _loadingHistory = false;
+      if (_messages.isEmpty) {
+        _showingWelcome = true;
+        _messages.add(
+          AssistantChatMessage(
+            role: 'assistant',
+            text:
+                'Tell me what your skin feels like today. I will check your current shelf and suggest a simple, safe routine from products you already own.',
+            createdAt: DateTime.now(),
+          ),
+        );
+      }
+    });
+    _scrollToLatest();
   }
 
   @override
@@ -87,17 +109,25 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen>
     if (text.isEmpty || _sending) {
       return;
     }
-    // Conversation so far, minus the seeded greeting, which carries no user
-    // context and would only spend tokens.
-    final history = _messages.skip(1).toList();
+    // The seeded greeting is visual-only; it carries no user context and is
+    // not replayed to Gemini.
+    final history = _showingWelcome ? _messages.skip(1).toList() : _messages;
+    final questionTime = DateTime.now();
     setState(() {
       _controller.clear();
-      _messages.add(AssistantChatMessage(role: 'user', text: text));
+      _messages.add(
+        AssistantChatMessage(role: 'user', text: text, createdAt: questionTime),
+      );
+      _showingWelcome = false;
       _sending = true;
     });
     // Reveal the question and the thinking bubble straight away.
     _scrollToLatest();
-    await widget.store.saveChatMessage(role: 'user', text: text);
+    await widget.store.saveChatMessage(
+      role: 'user',
+      text: text,
+      createdAt: questionTime,
+    );
     final reply = await widget.store.askAssistant(
       message: text,
       products: widget.products,
@@ -106,13 +136,17 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen>
     if (!mounted) {
       return;
     }
+    final replyTime = DateTime.now();
     setState(() {
       _messages.add(
         AssistantChatMessage(
           role: 'assistant',
           text: reply.message,
+          createdAt: replyTime,
           safetyNote: reply.safetyNote,
           fromFallback: reply.fromFallback,
+          safetyFallback: reply.safetyFallback,
+          quotaLimited: reply.quotaLimited,
         ),
       );
       _sending = false;
@@ -120,7 +154,12 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen>
     _scrollToLatest();
     await widget.store.saveChatMessage(
       role: 'assistant',
-      text: '${reply.message}\n\n${reply.safetyNote}',
+      text: reply.message,
+      createdAt: replyTime,
+      safetyNote: reply.safetyNote,
+      fromFallback: reply.fromFallback,
+      safetyFallback: reply.safetyFallback,
+      quotaLimited: reply.quotaLimited,
     );
   }
 
@@ -139,6 +178,32 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen>
                 title: 'Glow Assistant',
                 subtitle:
                     'AI skincare guidance based on your current beauty shelf.',
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Icon(Icons.schedule_outlined, size: 16, color: primary),
+                  const SizedBox(width: 6),
+                  Text(
+                    '24-hour conversation',
+                    style: TextStyle(
+                      color: primary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Older messages clear automatically.',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: ink.withValues(alpha: 0.48),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               Container(
@@ -167,22 +232,33 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen>
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            controller: _scrollController,
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-            itemCount: _messages.length + (_sending ? 1 : 0),
-            itemBuilder: (context, index) {
-              if (_sending && index == _messages.length) {
-                return const AssistantBubble(
-                  message: AssistantChatMessage(
-                    role: 'assistant',
-                    text: 'Thinking through your shelf...',
-                  ),
-                );
-              }
-              return AssistantBubble(message: _messages[index]);
-            },
-          ),
+          child: _loadingHistory
+              ? const Center(child: CircularProgressIndicator())
+              : ListView(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                  children: [
+                    for (var index = 0; index < _messages.length; index++) ...[
+                      if (index == 0 ||
+                          !_isSameDay(
+                            _messages[index - 1].createdAt,
+                            _messages[index].createdAt,
+                          ))
+                        ConversationDayDivider(
+                          date: _messages[index].createdAt,
+                        ),
+                      AssistantBubble(message: _messages[index]),
+                    ],
+                    if (_sending)
+                      AssistantBubble(
+                        message: AssistantChatMessage(
+                          role: 'assistant',
+                          text: 'Thinking through your shelf...',
+                          createdAt: DateTime.now(),
+                        ),
+                      ),
+                  ],
+                ),
         ),
         Container(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
@@ -226,6 +302,52 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen>
   }
 }
 
+bool _isSameDay(DateTime first, DateTime second) {
+  return first.year == second.year &&
+      first.month == second.month &&
+      first.day == second.day;
+}
+
+/// A light timeline marker keeps a 24-hour conversation scannable without
+/// turning the chat into a stack of cards.
+class ConversationDayDivider extends StatelessWidget {
+  const ConversationDayDivider({super.key, required this.date});
+
+  final DateTime date;
+
+  @override
+  Widget build(BuildContext context) {
+    final today = DateTime.now();
+    final yesterday = today.subtract(const Duration(days: 1));
+    final label = _isSameDay(date, today)
+        ? 'TODAY'
+        : _isSameDay(date, yesterday)
+        ? 'YESTERDAY'
+        : '${date.day}/${date.month}/${date.year}';
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 12),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: ink.withValues(alpha: 0.1))),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: ink.withValues(alpha: 0.42),
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ),
+          Expanded(child: Divider(color: ink.withValues(alpha: 0.1))),
+        ],
+      ),
+    );
+  }
+}
+
 /// One chat bubble, right-aligned for the user and left for the assistant.
 class AssistantBubble extends StatelessWidget {
   const AssistantBubble({super.key, required this.message});
@@ -256,6 +378,15 @@ class AssistantBubble extends StatelessWidget {
                 height: 1.35,
               ),
             ),
+            const SizedBox(height: 8),
+            Text(
+              TimeOfDay.fromDateTime(message.createdAt).format(context),
+              style: TextStyle(
+                color: (isUser ? Colors.white : ink).withValues(alpha: 0.58),
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             if (message.safetyNote != null &&
                 message.safetyNote!.isNotEmpty) ...[
               const SizedBox(height: 10),
@@ -274,13 +405,21 @@ class AssistantBubble extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    Icons.cloud_off_outlined,
+                    message.quotaLimited
+                        ? Icons.hourglass_top_outlined
+                        : message.safetyFallback
+                        ? Icons.verified_user_outlined
+                        : Icons.cloud_off_outlined,
                     size: 13,
                     color: secondary.withValues(alpha: 0.8),
                   ),
                   const SizedBox(width: 5),
                   Text(
-                    'Offline guidance',
+                    message.quotaLimited
+                        ? 'Gemini is cooling down - try again shortly'
+                        : message.safetyFallback
+                        ? 'Safety-reviewed guidance'
+                        : 'Offline guidance',
                     style: TextStyle(
                       color: secondary.withValues(alpha: 0.8),
                       fontSize: 11,

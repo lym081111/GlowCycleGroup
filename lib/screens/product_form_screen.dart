@@ -72,6 +72,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   final _picker = ImagePicker();
   late final TextEditingController _nameController;
   late final TextEditingController _brandController;
+  late final TextEditingController _productTypeController;
   late final TextEditingController _expiryController;
   late final TextEditingController _notesController;
   late final TextEditingController _ingredientsController;
@@ -116,6 +117,9 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     final product = widget.product;
     _nameController = TextEditingController(text: product?.name ?? '');
     _brandController = TextEditingController(text: product?.brand ?? '');
+    _productTypeController = TextEditingController(
+      text: product?.productType ?? '',
+    );
     _expiryController = TextEditingController(
       text: (product?.expiryMonths ?? 12).toString(),
     );
@@ -144,6 +148,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   void dispose() {
     _nameController.dispose();
     _brandController.dispose();
+    _productTypeController.dispose();
     _expiryController.dispose();
     _notesController.dispose();
     _ingredientsController.dispose();
@@ -377,6 +382,17 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                     },
                     decoration: const InputDecoration(
                       labelText: 'Category',
+                      prefixIcon: Icon(Icons.category_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _productTypeController,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Product type (e.g. Moisturizer)',
+                      helperText:
+                          'Helps Glow Assistant identify the right shelf item.',
                       prefixIcon: Icon(Icons.category_outlined),
                     ),
                   ),
@@ -901,6 +917,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
         name: _nameController.text.trim(),
         brand: _brandController.text.trim(),
         category: _category,
+        productType: _productTypeController.text.trim(),
         purchaseDate: _purchaseDate,
         openingDate: _openingDate,
         expiryMonths: int.parse(_expiryController.text.trim()),

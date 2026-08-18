@@ -1,13 +1,15 @@
 import 'beauty_product.dart';
 
-/// A Glow Assistant answer, either returned by Gemini or produced locally by
-/// the offline rule engine in [AssistantReply.local].
+/// A Glow Assistant answer, normally returned by Gemini and grounded against
+/// the user's currently usable shelf.
 class AssistantReply {
   AssistantReply({
     required this.message,
     required this.productNames,
     required this.safetyNote,
     this.fromFallback = false,
+    this.safetyFallback = false,
+    this.quotaLimited = false,
   });
 
   final String message;
@@ -17,6 +19,15 @@ class AssistantReply {
   /// True when this answer came from the offline rule engine rather than
   /// Gemini, so the UI can say so instead of degrading silently.
   final bool fromFallback;
+
+  /// True when Gemini replied but its recommendation was rejected by the
+  /// local safety guard. This is distinct from a real offline/API fallback.
+  final bool safetyFallback;
+
+  /// Gemini's short-term free-tier request limit was reached. This is not an
+  /// offline/device error, so the interface can give the user an honest retry
+  /// message instead of labelling it as offline guidance.
+  final bool quotaLimited;
 
   factory AssistantReply.fromJson(Map<String, dynamic> json) {
     return AssistantReply(
@@ -28,16 +39,42 @@ class AssistantReply {
     );
   }
 
-  /// Offline fallback used when Gemini is unavailable or its answer fails
-  /// [isSafeFor]. Keeps the assistant usable without a network round trip.
-  factory AssistantReply.local(String message, List<BeautyProduct> products) {
+  /// Non-prescriptive fallback used only when a live Gemini answer cannot be
+  /// shown. Product matching remains Gemini's responsibility.
+  factory AssistantReply.local({
+    bool safetyFallback = false,
+    bool quotaLimited = false,
+  }) {
+    return AssistantReply(
+      message: safetyFallback
+          ? 'I could not verify that the suggested product matches your current shelf. Please try again after checking each product type.'
+          : quotaLimited
+          ? 'Gemini is taking a short pause because the free request limit was reached. Please try your question again in about one minute.'
+          : 'Glow Assistant is temporarily unavailable, so I cannot safely personalise a recommendation from your shelf right now.',
+      productNames: const [],
+      safetyNote:
+          'Glow Assistant is not a medical diagnosis. Seek professional care for severe, painful, swollen, infected, or persistent symptoms.',
+      fromFallback: true,
+      safetyFallback: safetyFallback,
+      quotaLimited: quotaLimited,
+    );
+  }
+
+  /// Legacy deterministic fallback retained temporarily for migration only.
+  /// Live Gemini answers never use this path.
+  factory AssistantReply.ruleBasedLegacy(
+    String message,
+    List<BeautyProduct> products, {
+    bool safetyFallback = false,
+  }) {
     final lower = message.toLowerCase();
     final now = DateTime.now();
     final eyeConcern = _isEyeConcern(lower);
+    final lipConcern = _isLipConcern(lower);
     final active = products.where((item) => item.isRecommendable(now)).toList();
     final gentle = active.where((item) {
       final text =
-          '${item.name} ${item.category} ${item.ingredients.join(' ')} ${item.notes}'
+          '${item.name} ${item.productType} ${item.category} ${item.ingredients.join(' ')} ${item.notes}'
               .toLowerCase();
       if (eyeConcern && !_isEyeCompatible(item, text)) {
         return false;
@@ -73,6 +110,27 @@ class AssistantReply {
         safetyNote:
             'Glow Assistant is not a medical diagnosis. For eye pain, light sensitivity, discharge, swelling, vision changes, or symptoms that persist, seek prompt advice from an optometrist or doctor.',
         fromFallback: true,
+        safetyFallback: safetyFallback,
+      );
+    }
+
+    if (lipConcern) {
+      final lipProducts = active
+          .where((item) => _isLipProduct(item, _productText(item)))
+          .take(2)
+          .toList();
+      final names = lipProducts.map((item) => item.name).toList();
+      final productAdvice = names.isEmpty
+          ? 'I cannot find a clearly labelled lip balm or lip treatment on your shelf.'
+          : 'Use ${names.join(', ')} as directed. Apply a thin layer to clean, dry lips and reapply when needed.';
+      return AssistantReply(
+        message:
+            'Dry lips need lip-specific care. Do not use eye drops, face actives, fragrance, or lip tint to treat lip dryness. $productAdvice Avoid licking or scrubbing your lips while they are irritated.',
+        productNames: names,
+        safetyNote:
+            'Glow Assistant is not a medical diagnosis. Seek medical or dental advice for severe cracking, swelling, blistering, infection, or symptoms that persist.',
+        fromFallback: true,
+        safetyFallback: safetyFallback,
       );
     }
 
@@ -129,17 +187,7 @@ class AssistantReply {
       ]),
     );
     final barrierProducts = gentleProducts.where(
-      (item) => _hasAny(_productText(item), [
-        'moistur',
-        'barrier',
-        'ceramide',
-        'panthenol',
-        'hyaluronic',
-        'glycerin',
-        'centella',
-        'squalane',
-        'cream',
-      ]),
+      (item) => item.isHydratingProduct,
     );
     final acneProducts = active.where(
       (item) => _hasAny(_productText(item), [
@@ -219,13 +267,24 @@ class AssistantReply {
       safetyNote:
           'Glow Assistant is not a medical diagnosis. Seek professional care if symptoms are painful, swollen, infected, or persistent.',
       fromFallback: true,
+      safetyFallback: safetyFallback,
     );
   }
 
-  /// Guard applied to Gemini answers before they reach the user: every named
-  /// product must exist on the shelf, and eye concerns must not be answered
-  /// with lip, makeup, or active-ingredient products.
-  bool isSafeFor(String userMessage, List<BeautyProduct> products) {
+  /// Integrity check only. It does not prescribe what Gemini should choose.
+  bool isGroundedInInventory(List<BeautyProduct> products) {
+    final now = DateTime.now();
+    final offeredNames = products
+        .where((item) => item.isRecommendable(now))
+        .map((item) => item.name.trim().toLowerCase())
+        .toSet();
+    return productNames.every(
+      (name) => offeredNames.contains(name.trim().toLowerCase()),
+    );
+  }
+
+  /// Legacy rule guard retained temporarily for migration only.
+  bool legacyIsSafeFor(String userMessage, List<BeautyProduct> products) {
     final now = DateTime.now();
     final offeredNames = products
         .where((item) => item.isRecommendable(now))
@@ -236,7 +295,44 @@ class AssistantReply {
     )) {
       return false;
     }
-    if (!_isEyeConcern(userMessage.toLowerCase())) {
+    final lowerMessage = userMessage.toLowerCase();
+    final lipConcern = _isLipConcern(lowerMessage);
+    if (!_isEyeConcern(lowerMessage) &&
+        !lipConcern &&
+        _hasAny(lowerMessage, [
+          'dry',
+          'dehydrat',
+          'tight',
+          'flaky',
+          'dryness',
+          '干燥',
+          '紧绷',
+        ])) {
+      final hydratingNames = products
+          .where((item) => item.isRecommendable(now) && item.isHydratingProduct)
+          .map((item) => item.name.toLowerCase())
+          .toSet();
+      if (hydratingNames.isNotEmpty &&
+          !productNames.any(
+            (name) => hydratingNames.contains(name.toLowerCase()),
+          )) {
+        return false;
+      }
+    }
+    if (lipConcern) {
+      final allowedNames = products
+          .where(
+            (item) =>
+                item.isRecommendable(now) &&
+                _isLipProduct(item, _productText(item)),
+          )
+          .map((item) => item.name.toLowerCase())
+          .toSet();
+      return productNames.every(
+        (name) => allowedNames.contains(name.toLowerCase()),
+      );
+    }
+    if (!_isEyeConcern(lowerMessage)) {
       return true;
     }
     final replyText = '$message ${productNames.join(' ')}'.toLowerCase();
@@ -264,8 +360,19 @@ class AssistantReply {
     ).hasMatch(text);
   }
 
+  static bool _isLipConcern(String text) {
+    return RegExp(r'\b(?:lip|lips)\b').hasMatch(text);
+  }
+
+  static bool _isLipProduct(BeautyProduct item, String text) {
+    return item.productType.toLowerCase().contains('lip balm') ||
+        RegExp(
+          r'\blip\s+(?:balm|treatment|mask|oil|moisturi[sz]er)\b',
+        ).hasMatch(text);
+  }
+
   static String _productText(BeautyProduct item) {
-    return '${item.name} ${item.category} ${item.ingredients.join(' ')} ${item.notes}'
+    return '${item.name} ${item.productType} ${item.category} ${item.ingredients.join(' ')} ${item.notes}'
         .toLowerCase();
   }
 

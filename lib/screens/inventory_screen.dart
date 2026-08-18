@@ -37,30 +37,39 @@ class _InventoryScreenState extends State<InventoryScreen> {
       final matchesStatus =
           _status == 'All' || product.resolvedStatus(now) == _status;
       return matchesQuery && matchesCategory && matchesStatus;
-    }).toList()..sort((a, b) => a.expiryDate.compareTo(b.expiryDate));
+    }).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    // In All Items, keep active products easy to browse and send lifecycle
+    // records to the bottom without hiding them. A product is still sorted by
+    // its original added date within its own section.
+    const pastStatuses = {'Expired', 'Finished', 'Recycled'};
+    final isAllItemsView = _category == 'All' && _status == 'All';
+    final activeProducts = filtered
+        .where((product) => !pastStatuses.contains(product.resolvedStatus(now)))
+        .toList();
+    final pastProducts = filtered
+        .where((product) => pastStatuses.contains(product.resolvedStatus(now)))
+        .toList();
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
       children: [
         const AppHeader(
           title: 'My Beauty Shelf',
-          subtitle: 'Curated by expiry, category, and what deserves attention.',
+          subtitle:
+              'Your newest additions, with past items kept out of the way.',
         ),
         const SizedBox(height: 14),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFFFF5F0), Color(0xFFE7F2E7)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            color: surfaceHigh,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.92)),
+            border: Border.all(color: ink.withValues(alpha: 0.06)),
           ),
           child: Row(
             children: [
-              const Icon(Icons.auto_awesome, color: primary, size: 18),
+              const Icon(Icons.south_outlined, color: primary, size: 18),
               const SizedBox(width: 8),
               Expanded(
                 child: Text.rich(
@@ -74,7 +83,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
                         ),
                       ),
                       TextSpan(
-                        text: ' - sorted by what to finish first',
+                        text: ' - newest added first',
                         style: TextStyle(color: ink.withValues(alpha: 0.62)),
                       ),
                     ],
@@ -181,7 +190,50 @@ class _InventoryScreenState extends State<InventoryScreen> {
             message:
                 'Try another filter or add a product to your beauty shelf.',
           )
-        else
+        else if (isAllItemsView) ...[
+          if (activeProducts.isNotEmpty)
+            BeautyShelfView(
+              products: activeProducts,
+              onProductTap: widget.onProductTap,
+            ),
+          if (pastProducts.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(child: Divider(color: ink.withValues(alpha: 0.1))),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 10),
+                  child: Text(
+                    'PAST ITEMS',
+                    style: TextStyle(
+                      color: secondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ),
+                Expanded(child: Divider(color: ink.withValues(alpha: 0.1))),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Expired, finished and recycled products are kept here for your records.',
+              style: TextStyle(
+                color: ink.withValues(alpha: 0.55),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Opacity(
+              opacity: 0.68,
+              child: BeautyShelfView(
+                products: pastProducts,
+                onProductTap: widget.onProductTap,
+              ),
+            ),
+          ],
+        ] else
           BeautyShelfView(
             products: filtered,
             onProductTap: widget.onProductTap,
