@@ -31,44 +31,164 @@ String productShelfLabel(BeautyProduct product, String status, DateTime now) {
   return '$months months left';
 }
 
-/// Responsive grid of [BentoProductCard]s, 2-4 columns by available width.
+/// Full-width lifecycle cards keep the product actions visible without hiding
+/// them behind an overflow menu.
 class BeautyShelfView extends StatelessWidget {
   const BeautyShelfView({
     super.key,
     required this.products,
     required this.onProductTap,
+    required this.onFinished,
+    required this.onRecycle,
   });
 
   final List<BeautyProduct> products;
   final ValueChanged<BeautyProduct> onProductTap;
+  final Future<void> Function(BeautyProduct product) onFinished;
+  final Future<void> Function(BeautyProduct product) onRecycle;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 700
-            ? 4
-            : constraints.maxWidth >= 520
-            ? 3
-            : 2;
-        final spacing = 12.0;
-        final tileWidth =
-            (constraints.maxWidth - (spacing * (columns - 1))) / columns;
-        return Wrap(
-          spacing: spacing,
-          runSpacing: spacing,
-          children: [
-            for (final product in products)
-              SizedBox(
-                width: tileWidth,
-                child: BentoProductCard(
-                  product: product,
-                  onTap: () => onProductTap(product),
+    return Column(
+      children: [
+        for (final product in products)
+          LifecycleProductCard(
+            product: product,
+            onTap: () => onProductTap(product),
+            onFinished: () => onFinished(product),
+            onRecycle: () => onRecycle(product),
+          ),
+      ],
+    );
+  }
+}
+
+/// The approved Shelf card: image and product information above two lifecycle
+/// actions, so users can finish or start the recycle flow in one tap.
+class LifecycleProductCard extends StatelessWidget {
+  const LifecycleProductCard({
+    super.key,
+    required this.product,
+    required this.onTap,
+    required this.onFinished,
+    required this.onRecycle,
+  });
+
+  final BeautyProduct product;
+  final VoidCallback onTap;
+  final Future<void> Function() onFinished;
+  final Future<void> Function() onRecycle;
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final status = product.resolvedStatus(now);
+    final isFinished = status == 'Finished';
+    final isRecycled = status == 'Recycled';
+    final canFinish = !isFinished && !isRecycled;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ink.withValues(alpha: 0.07)),
+        boxShadow: [
+          BoxShadow(
+            color: ink.withValues(alpha: 0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 86,
+                      height: 112,
+                      child: ProductImageMock(product: product, status: status),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            product.brand.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: ink.withValues(alpha: 0.46),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            product.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: ink,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                              height: 1.15,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          StatusPill(
+                            label: productShelfLabel(product, status, now),
+                            status: status,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Expires ${dateFormat.format(product.expiryDate)}',
+                            style: TextStyle(
+                              color: ink.withValues(alpha: 0.6),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-          ],
-        );
-      },
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: canFinish ? onFinished : null,
+                        icon: const Icon(Icons.check_circle_outline, size: 18),
+                        label: Text(isFinished ? 'Finished' : 'Finish'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: isRecycled ? null : onRecycle,
+                        icon: const Icon(Icons.recycling, size: 18),
+                        label: Text(isRecycled ? 'Recycled' : 'Recycle'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -243,14 +363,7 @@ class ProductImageMock extends StatelessWidget {
     }
     return Container(
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            palette.first.withValues(alpha: 0.72),
-            palette.last.withValues(alpha: 0.9),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: palette.first.withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(8),
       ),
       clipBehavior: Clip.antiAlias,

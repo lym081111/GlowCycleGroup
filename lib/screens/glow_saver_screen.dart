@@ -8,10 +8,9 @@ import '../theme/app_colors.dart';
 import '../widgets/info_widgets.dart';
 import '../widgets/layout_widgets.dart';
 import '../widgets/no_buy_challenge_card.dart';
-import '../widgets/product_cards.dart';
 
-/// Saver tab: estimated savings, value at risk, and the products worth
-/// finishing before buying anything new.
+/// The SDG 12 action tab. It turns shelf data into the next practical action
+/// in a product's lifecycle instead of presenting points as pretend money.
 class GlowSaverScreen extends StatelessWidget {
   const GlowSaverScreen({
     super.key,
@@ -21,6 +20,8 @@ class GlowSaverScreen extends StatelessWidget {
     required this.onClaimNoBuyChallenge,
     required this.onOpenRecycleMap,
     required this.onOpenWishlistCheck,
+    required this.onOpenShelf,
+    required this.onLogContainer,
   });
 
   final List<BeautyProduct> products;
@@ -29,87 +30,50 @@ class GlowSaverScreen extends StatelessWidget {
   final Future<void> Function() onClaimNoBuyChallenge;
   final VoidCallback onOpenRecycleMap;
   final VoidCallback onOpenWishlistCheck;
+  final VoidCallback onOpenShelf;
+  final VoidCallback onLogContainer;
 
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final stats = InventoryStats.from(products, actions, now);
-    final savedMoney = actions.fold<double>(
-      0,
-      (total, action) => total + action.pointsEarned,
-    );
-    final valueAtRisk = products
-        .where(
-          (item) =>
-              item.resolvedStatus(now) == 'Use Soon' ||
-              item.resolvedStatus(now) == 'Expired',
-        )
-        .fold<double>(0, (total, item) => total + (item.price ?? 0));
-    final priority =
+    final useSoon =
         products
-            .where(
-              (item) =>
-                  item.resolvedStatus(now) == 'Use Soon' ||
-                  item.resolvedStatus(now) == 'Expired',
-            )
+            .where((item) => item.resolvedStatus(now) == 'Use Soon')
             .toList()
-          ..sort(
-            (a, b) => a.daysRemaining(now).compareTo(b.daysRemaining(now)),
-          );
-    final overloaded = _overloadedCategories(products, now);
+          ..sort((a, b) => a.expiryDate.compareTo(b.expiryDate));
+    final finished =
+        products
+            .where((item) => item.resolvedStatus(now) == 'Finished')
+            .toList()
+          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
       children: [
-        const AppHeader(
-          title: 'Glow Saver',
-          subtitle:
-              'Turn mindful beauty habits into real savings and less waste.',
+        const AppHeader(title: 'Cycle Plan'),
+        const SizedBox(height: 16),
+        _LifecycleStrip(
+          useSoon: useSoon.length,
+          finished: finished.length,
+          recycled: stats.recycled,
         ),
         const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: ink,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.savings, color: Color(0xFFFFD977), size: 42),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'RM ${savedMoney.toStringAsFixed(0)}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 34,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    Text(
-                      'estimated saved from skipped duplicates and no-buy actions',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.74),
-                        height: 1.3,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+        _NextCircularAction(
+          useSoon: useSoon,
+          finished: finished,
+          onOpenShelf: onOpenShelf,
+          onLogContainer: onLogContainer,
+          onOpenWishlistCheck: onOpenWishlistCheck,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
         Row(
           children: [
             Expanded(
               child: StatTile(
-                label: 'Value at risk',
-                value: 'RM ${valueAtRisk.toStringAsFixed(0)}',
-                icon: Icons.warning_amber_outlined,
+                label: 'Use soon',
+                value: stats.useSoon.toString(),
+                icon: Icons.hourglass_top_outlined,
                 color: amber,
               ),
             ),
@@ -125,126 +89,235 @@ class GlowSaverScreen extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: onOpenWishlistCheck,
-                icon: const Icon(Icons.shopping_bag_outlined),
-                label: const Text('Check before buying'),
-              ),
-            ),
-            const SizedBox(width: 10),
-            IconButton.filledTonal(
-              tooltip: 'Recycle map',
+        // When the "next action" card above is already offering the wishlist
+        // check (nothing is finished or expiring soon), repeating it here as
+        // a second button just duplicates the same destination.
+        if (finished.isEmpty && useSoon.isEmpty)
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
               onPressed: onOpenRecycleMap,
               icon: const Icon(Icons.map_outlined),
+              label: const Text('Nearby recycling'),
             ),
-          ],
-        ),
-        const SizedBox(height: 12),
+          )
+        else
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onOpenWishlistCheck,
+                  icon: const Icon(Icons.shopping_bag_outlined),
+                  label: const Text('Check before buying'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              IconButton.filledTonal(
+                tooltip: 'Nearby recycling',
+                onPressed: onOpenRecycleMap,
+                icon: const Icon(Icons.map_outlined),
+              ),
+            ],
+          ),
+        const SizedBox(height: 16),
         NoBuyChallengeCard(
           actions: actions,
           onStart: onStartNoBuyChallenge,
           onClaim: onClaimNoBuyChallenge,
         ),
-        const SizedBox(height: 18),
-        const SectionTitle('Use before buying'),
-        const SizedBox(height: 10),
-        if (priority.isEmpty)
-          const EmptyState(
-            icon: Icons.check_circle_outline,
-            title: 'No urgent products',
-            message: 'Your shelf has no expiring products right now.',
-          )
-        else
-          ...priority
-              .take(5)
-              .map(
-                (item) => ProductShelfCard(
-                  product: item,
-                  compact: true,
-                  onTap: () {},
-                ),
-              ),
-        const SizedBox(height: 18),
-        const SectionTitle('Category overload'),
-        const SizedBox(height: 10),
-        if (overloaded.isEmpty)
-          const EmptyState(
-            icon: Icons.balance_outlined,
-            title: 'Balanced shelf',
-            message: 'No product category looks overloaded.',
-          )
-        else
-          ...overloaded.map(
-            (entry) => ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const CircleAvatar(
-                backgroundColor: blush,
-                child: Icon(Icons.priority_high, color: brandPink),
-              ),
-              title: Text(
-                '${entry.key}: ${entry.value} active products',
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              subtitle: const Text('Finish one before buying another.'),
-            ),
-          ),
-        const SizedBox(height: 18),
-        const SectionTitle('Impact history'),
-        const SizedBox(height: 10),
-        if (actions.isEmpty)
-          const EmptyState(
-            icon: Icons.history_outlined,
-            title: 'No saver history yet',
-            message:
-                'Skipped purchases, finished products, and recycling will appear here.',
-          )
-        else
-          ...actions
-              .take(8)
-              .map(
-                (action) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    backgroundColor: mint,
-                    child: Text(
-                      'RM',
-                      style: const TextStyle(
-                        color: ink,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
-                  title: Text(
-                    action.actionType,
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  subtitle: Text(
-                    '${action.description}\nSaved estimate: RM ${action.pointsEarned} - ${dateFormat.format(action.date)}',
-                  ),
-                  isThreeLine: true,
-                ),
-              ),
       ],
     );
   }
+}
 
-  /// Categories with three or more still-usable products, which is the
-  /// signal used to warn against buying another one.
-  static List<MapEntry<String, int>> _overloadedCategories(
-    List<BeautyProduct> products,
-    DateTime now,
-  ) {
-    final counts = <String, int>{};
-    for (final product in products) {
-      final status = product.resolvedStatus(now);
-      if (status == 'Finished' || status == 'Recycled' || status == 'Expired') {
-        continue;
-      }
-      counts.update(product.category, (value) => value + 1, ifAbsent: () => 1);
+class _LifecycleStrip extends StatelessWidget {
+  const _LifecycleStrip({
+    required this.useSoon,
+    required this.finished,
+    required this.recycled,
+  });
+
+  final int useSoon;
+  final int finished;
+  final int recycled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: mint,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          _CycleStep(
+            icon: Icons.spa_outlined,
+            label: 'Use',
+            value: useSoon.toString(),
+            accent: amber,
+          ),
+          const _CycleConnector(),
+          _CycleStep(
+            icon: Icons.check_circle_outline,
+            label: 'Finish',
+            value: finished.toString(),
+            accent: primary,
+          ),
+          const _CycleConnector(),
+          _CycleStep(
+            icon: Icons.recycling,
+            label: 'Recycle',
+            value: recycled.toString(),
+            accent: tertiary,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CycleStep extends StatelessWidget {
+  const _CycleStep({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.accent,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Icon(icon, color: accent),
+          const SizedBox(height: 5),
+          Text(
+            value,
+            style: const TextStyle(
+              color: ink,
+              fontWeight: FontWeight.w900,
+              fontSize: 20,
+            ),
+          ),
+          Text(
+            label,
+            style: TextStyle(color: ink.withValues(alpha: 0.62), fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CycleConnector extends StatelessWidget {
+  const _CycleConnector();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Icon(Icons.arrow_forward, color: tertiary, size: 18);
+  }
+}
+
+class _NextCircularAction extends StatelessWidget {
+  const _NextCircularAction({
+    required this.useSoon,
+    required this.finished,
+    required this.onOpenShelf,
+    required this.onLogContainer,
+    required this.onOpenWishlistCheck,
+  });
+
+  final List<BeautyProduct> useSoon;
+  final List<BeautyProduct> finished;
+  final VoidCallback onOpenShelf;
+  final VoidCallback onLogContainer;
+  final VoidCallback onOpenWishlistCheck;
+
+  @override
+  Widget build(BuildContext context) {
+    late final IconData icon;
+    late final Color tone;
+    late final String title;
+    late final String body;
+    late final String action;
+    late final VoidCallback onTap;
+
+    if (finished.isNotEmpty) {
+      icon = Icons.recycling;
+      tone = tertiary;
+      title = 'Container ready to recycle';
+      body =
+          '${finished.first.name} is marked finished. Log the handoff when you recycle it.';
+      action = 'Log container';
+      onTap = onLogContainer;
+    } else if (useSoon.isNotEmpty) {
+      final item = useSoon.first;
+      icon = Icons.hourglass_top_outlined;
+      tone = amber;
+      title = 'Use this next';
+      body = '${item.name} expires ${dateFormat.format(item.expiryDate)}.';
+      action = 'Open shelf';
+      onTap = onOpenShelf;
+    } else {
+      icon = Icons.shopping_bag_outlined;
+      tone = primary;
+      title = 'Pause before purchasing';
+      body = 'Check your current shelf before adding another product.';
+      action = 'Check shelf';
+      onTap = onOpenWishlistCheck;
     }
-    return counts.entries.where((entry) => entry.value >= 3).toList();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: tone.withValues(alpha: 0.28)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            backgroundColor: tone.withValues(alpha: 0.16),
+            child: Icon(icon, color: tone),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: ink,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  body,
+                  style: TextStyle(
+                    color: ink.withValues(alpha: 0.68),
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextButton.icon(
+                  onPressed: onTap,
+                  icon: const Icon(Icons.arrow_forward, size: 17),
+                  label: Text(action),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

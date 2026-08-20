@@ -3,20 +3,18 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../models/beauty_product.dart';
-import '../models/eco_action.dart';
 import '../models/inventory_stats.dart';
 import '../theme/app_colors.dart';
 import '../widgets/action_buttons.dart';
 import '../widgets/dashboard_widgets.dart';
 import '../widgets/layout_widgets.dart';
 
-/// Home tab: headline metrics, an expiring-soon carousel, quick actions, and
-/// the most recent eco activity.
+/// Home tab: headline metrics, an expiring-soon carousel, and quick actions.
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({
     super.key,
     required this.products,
-    required this.actions,
+    required this.userName,
     required this.onAddTap,
     required this.onWishlistTap,
     required this.onLogContainer,
@@ -24,7 +22,7 @@ class DashboardScreen extends StatelessWidget {
   });
 
   final List<BeautyProduct> products;
-  final List<EcoAction> actions;
+  final String userName;
   final VoidCallback onAddTap;
   final VoidCallback onWishlistTap;
   final VoidCallback onLogContainer;
@@ -33,7 +31,7 @@ class DashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final stats = InventoryStats.from(products, actions, now);
+    final stats = InventoryStats.from(products, const [], now);
     final expiringProducts =
         products
             .where(
@@ -42,17 +40,10 @@ class DashboardScreen extends StatelessWidget {
             )
             .toList()
           ..sort((a, b) => a.expiryDate.compareTo(b.expiryDate));
-    final activeProducts = products
-        .where(
-          (item) =>
-              !['Finished', 'Recycled'].contains(item.resolvedStatus(now)),
-        )
-        .toList();
-
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
       children: [
-        DashboardWelcomeCard(stats: stats),
+        DashboardWelcomeCard(stats: stats, userName: userName),
         const SizedBox(height: 16),
         SectionHeading(
           title: 'Expiring Soon',
@@ -104,10 +95,6 @@ class DashboardScreen extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 16),
-        const SectionHeading(title: 'Recent Activity'),
-        const SizedBox(height: 12),
-        ActivityPanel(actions: actions, activeProducts: activeProducts),
       ],
     );
   }

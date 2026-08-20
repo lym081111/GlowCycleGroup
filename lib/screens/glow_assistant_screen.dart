@@ -13,10 +13,12 @@ class GlowAssistantScreen extends StatefulWidget {
     super.key,
     required this.products,
     required this.store,
+    this.userInitial = 'U',
   });
 
   final List<BeautyProduct> products;
   final GlowStore store;
+  final String userInitial;
 
   @override
   State<GlowAssistantScreen> createState() => _GlowAssistantScreenState();
@@ -165,25 +167,18 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen>
 
   @override
   Widget build(BuildContext context) {
-    final usableProducts = widget.products
-        .where((item) => item.isRecommendable(DateTime.now()))
-        .length;
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-          child: Column(
+          child: const Column(
             children: [
-              const AppHeader(
-                title: 'Glow Assistant',
-                subtitle:
-                    'AI skincare guidance based on your current beauty shelf.',
-              ),
-              const SizedBox(height: 10),
+              AppHeader(title: 'Glow Assistant'),
+              SizedBox(height: 10),
               Row(
                 children: [
-                  const Icon(Icons.schedule_outlined, size: 16, color: primary),
-                  const SizedBox(width: 6),
+                  Icon(Icons.schedule_outlined, size: 16, color: primary),
+                  SizedBox(width: 6),
                   Text(
                     '24-hour conversation',
                     style: TextStyle(
@@ -192,41 +187,15 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen>
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'Older messages clear automatically.',
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: ink.withValues(alpha: 0.48),
-                        fontSize: 12,
-                      ),
+                      style: TextStyle(color: tertiary, fontSize: 12),
                     ),
                   ),
                 ],
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: mint,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.inventory_2_outlined, color: primary),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        '$usableProducts usable products available for recommendations.',
-                        style: const TextStyle(
-                          color: ink,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ],
           ),
@@ -247,7 +216,10 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen>
                         ConversationDayDivider(
                           date: _messages[index].createdAt,
                         ),
-                      AssistantBubble(message: _messages[index]),
+                      AssistantBubble(
+                        message: _messages[index],
+                        userInitial: widget.userInitial,
+                      ),
                     ],
                     if (_sending)
                       AssistantBubble(
@@ -256,6 +228,7 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen>
                           text: 'Thinking through your shelf...',
                           createdAt: DateTime.now(),
                         ),
+                        userInitial: widget.userInitial,
                       ),
                   ],
                 ),
@@ -268,30 +241,41 @@ class _GlowAssistantScreenState extends State<GlowAssistantScreen>
           ),
           child: SafeArea(
             top: false,
-            child: Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    focusNode: _inputFocus,
-                    // One line, and a hint short enough not to wrap into a
-                    // second one. The old example was 39 characters and split
-                    // the bar in two at rest.
-                    maxLines: 1,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _send(),
-                    decoration: const InputDecoration(
-                      hintText: 'How does your skin feel?',
-                      hintMaxLines: 1,
-                      prefixIcon: Icon(Icons.spa_outlined),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        focusNode: _inputFocus,
+                        // One line, and a hint short enough not to wrap into a
+                        // second one. The old example was 39 characters and split
+                        // the bar in two at rest.
+                        maxLines: 1,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _send(),
+                        decoration: const InputDecoration(
+                          hintText: 'How does your skin feel?',
+                          hintMaxLines: 1,
+                          prefixIcon: Icon(Icons.spa_outlined),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    IconButton.filled(
+                      tooltip: 'Send',
+                      onPressed: _sending ? null : _send,
+                      icon: const Icon(Icons.send),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                IconButton.filled(
-                  tooltip: 'Send',
-                  onPressed: _sending ? null : _send,
-                  icon: const Icon(Icons.send),
+                const SizedBox(height: 7),
+                const Text(
+                  'General beauty guidance only. Not medical advice or a diagnosis.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: tertiary, fontSize: 11, height: 1.25),
                 ),
               ],
             ),
@@ -350,87 +334,152 @@ class ConversationDayDivider extends StatelessWidget {
 
 /// One chat bubble, right-aligned for the user and left for the assistant.
 class AssistantBubble extends StatelessWidget {
-  const AssistantBubble({super.key, required this.message});
+  const AssistantBubble({
+    super.key,
+    required this.message,
+    this.userInitial = 'U',
+  });
 
   final AssistantChatMessage message;
+  final String userInitial;
 
   @override
   Widget build(BuildContext context) {
     final isUser = message.role == 'user';
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 320),
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isUser ? primary : Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: ink.withValues(alpha: 0.06)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    final bubble = Container(
+      constraints: const BoxConstraints(maxWidth: 282),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isUser ? primary : Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ink.withValues(alpha: 0.06)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            message.text,
+            style: TextStyle(color: isUser ? Colors.white : ink, height: 1.35),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            TimeOfDay.fromDateTime(message.createdAt).format(context),
+            style: TextStyle(
+              color: (isUser ? Colors.white : ink).withValues(alpha: 0.58),
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (message.safetyNote != null && message.safetyNote!.isNotEmpty) ...[
+            const SizedBox(height: 10),
             Text(
-              message.text,
+              message.safetyNote!,
               style: TextStyle(
-                color: isUser ? Colors.white : ink,
-                height: 1.35,
+                color: ink.withValues(alpha: 0.6),
+                height: 1.3,
+                fontSize: 12,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              TimeOfDay.fromDateTime(message.createdAt).format(context),
-              style: TextStyle(
-                color: (isUser ? Colors.white : ink).withValues(alpha: 0.58),
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            if (message.safetyNote != null &&
-                message.safetyNote!.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                message.safetyNote!,
-                style: TextStyle(
-                  color: ink.withValues(alpha: 0.6),
-                  height: 1.3,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-            if (message.fromFallback) ...[
-              const SizedBox(height: 10),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    message.quotaLimited
-                        ? Icons.hourglass_top_outlined
-                        : message.safetyFallback
-                        ? Icons.verified_user_outlined
-                        : Icons.cloud_off_outlined,
-                    size: 13,
-                    color: secondary.withValues(alpha: 0.8),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    message.quotaLimited
-                        ? 'Gemini is cooling down - try again shortly'
-                        : message.safetyFallback
-                        ? 'Safety-reviewed guidance'
-                        : 'Offline guidance',
-                    style: TextStyle(
-                      color: secondary.withValues(alpha: 0.8),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            ],
           ],
-        ),
+          if (message.fromFallback) ...[
+            const SizedBox(height: 10),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  message.quotaLimited
+                      ? Icons.hourglass_top_outlined
+                      : message.safetyFallback
+                      ? Icons.verified_user_outlined
+                      : Icons.cloud_off_outlined,
+                  size: 13,
+                  color: secondary.withValues(alpha: 0.8),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  message.quotaLimited
+                      ? 'Gemini is cooling down - try again shortly'
+                      : message.safetyFallback
+                      ? 'Safety-reviewed guidance'
+                      : 'Offline guidance',
+                  style: TextStyle(
+                    color: secondary.withValues(alpha: 0.8),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: isUser
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
+        children: [
+          if (!isUser) ...[
+            const _GlowAssistantAvatar(),
+            const SizedBox(width: 8),
+          ],
+          Flexible(child: bubble),
+          if (isUser) ...[
+            const SizedBox(width: 8),
+            _UserAvatar(initial: userInitial),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _GlowAssistantAvatar extends StatelessWidget {
+  const _GlowAssistantAvatar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: const BoxDecoration(color: primary, shape: BoxShape.circle),
+      child: const Stack(
+        alignment: Alignment.center,
+        children: [
+          Icon(Icons.spa_outlined, size: 20, color: Colors.white),
+          Positioned(
+            top: 5,
+            right: 5,
+            child: Icon(Icons.auto_awesome, size: 9, color: Colors.white),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UserAvatar extends StatelessWidget {
+  const _UserAvatar({required this.initial});
+
+  final String initial;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 34,
+      height: 34,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
+        color: secondaryContainer,
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        initial,
+        style: const TextStyle(color: secondary, fontWeight: FontWeight.w900),
       ),
     );
   }

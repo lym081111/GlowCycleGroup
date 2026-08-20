@@ -30,6 +30,8 @@ class GlowStore {
   static const _productsKey = 'glowcycle_products';
   static const _actionsKey = 'glowcycle_actions';
   static const _migrationKey = 'glowcycle_firestore_migrated';
+  static const _legacyDemoCleanupKey = 'glowcycle_legacy_demo_cleaned';
+  static const _legacyDemoProductIds = {'seed-serum', 'seed-lip'};
 
   bool get _useFirebase => user.isFirebaseUser && FirebaseBootstrap.configured;
 
@@ -89,6 +91,7 @@ class GlowStore {
     if (_useFirebase) {
       try {
         await _migrateLocalDataIfNeeded();
+        await _removeLegacyDemoProducts();
         final productSnapshot = await _productsRef
             .orderBy('updatedAt', descending: true)
             .get()
@@ -103,11 +106,6 @@ class GlowStore {
         final actions = actionSnapshot.docs
             .map((doc) => EcoAction.fromJson(doc.data()))
             .toList();
-        if (products.isEmpty) {
-          final seeded = _seedProducts();
-          await save(seeded, actions);
-          return AppData(products: seeded, actions: actions);
-        }
         return AppData(products: products, actions: actions);
       } catch (exception) {
         lastLoadError = _describeLoadError(exception);
@@ -138,19 +136,23 @@ class GlowStore {
         prefs.getString(_localProductsKey) ?? prefs.getString(_productsKey);
     final actionRaw =
         prefs.getString(_localActionsKey) ?? prefs.getString(_actionsKey);
-    final products = productRaw == null
-        ? _seedProducts()
-        : (jsonDecode(productRaw) as List)
-              .map(
-                (item) => BeautyProduct.fromJson(item as Map<String, dynamic>),
-              )
-              .toList();
+    final productItems = productRaw == null
+        ? const <dynamic>[]
+        : jsonDecode(productRaw) as List;
+    final hadLegacyDemo = productItems.any(
+      (item) =>
+          _legacyDemoProductIds.contains((item as Map<String, dynamic>)['id']),
+    );
+    final products = productItems
+        .map((item) => BeautyProduct.fromJson(item as Map<String, dynamic>))
+        .where((item) => !_legacyDemoProductIds.contains(item.id))
+        .toList();
     final actions = actionRaw == null
         ? <EcoAction>[]
         : (jsonDecode(actionRaw) as List)
               .map((item) => EcoAction.fromJson(item as Map<String, dynamic>))
               .toList();
-    if (productRaw == null) {
+    if (productRaw == null || hadLegacyDemo) {
       await save(products, actions);
     }
     return AppData(products: products, actions: actions);
@@ -200,6 +202,26 @@ class GlowStore {
       _localActionsKey,
       jsonEncode(actions.map((item) => item.toJson()).toList()),
     );
+  }
+
+  /// Removes only the exact IDs used by obsolete demo inventory. This gives
+  /// existing test accounts the same clean first-shelf experience as new
+  /// registrations without touching any real product records.
+  Future<void> _removeLegacyDemoProducts() async {
+    if (!_useFirebase) {
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final cleanupKey = '${_legacyDemoCleanupKey}_${user.uid}';
+    if (prefs.getBool(cleanupKey) ?? false) {
+      return;
+    }
+    final batch = FirebaseFirestore.instance.batch();
+    for (final productId in _legacyDemoProductIds) {
+      batch.delete(_productsRef.doc(productId));
+    }
+    await batch.commit();
+    await prefs.setBool(cleanupKey, true);
   }
 
   /// Uploads an inline data-URI photo to Firebase Storage.
@@ -623,54 +645,5 @@ User concern: ${jsonEncode(message)}
       await save(products, actions);
     }
     await prefs.setBool(key, true);
-  }
-
-  /// Demo shelf shown to a brand-new account so the UI is never empty.
-  List<BeautyProduct> _seedProducts() {
-    final now = DateTime.now();
-    return [
-      BeautyProduct(
-        id: 'seed-serum',
-        name: 'Vitamin Glow Serum',
-        brand: 'LumiLab',
-        category: 'Skincare',
-        purchaseDate: now.subtract(const Duration(days: 80)),
-        openingDate: now.subtract(const Duration(days: 330)),
-        expiryMonths: 12,
-        status: 'Opened',
-        imagePath: '',
-        notes: 'Use at night before moisturizer.',
-        ingredients: const ['Vitamin C', 'Hyaluronic Acid', 'Panthenol'],
-        manufactureDate: null,
-        directExpiryDate: null,
-        batchNumber: '',
-        price: 89,
-        scanConfidence: 0,
-        scanSource: 'seed',
-        createdAt: now,
-        updatedAt: now,
-      ),
-      BeautyProduct(
-        id: 'seed-lip',
-        name: 'Rose Cream Lip Tint',
-        brand: 'Petal Muse',
-        category: 'Makeup',
-        purchaseDate: now.subtract(const Duration(days: 40)),
-        openingDate: now.subtract(const Duration(days: 20)),
-        expiryMonths: 18,
-        status: 'Opened',
-        imagePath: '',
-        notes: 'Everyday shade.',
-        ingredients: const ['Shea Butter', 'Rosehip Oil'],
-        manufactureDate: null,
-        directExpiryDate: null,
-        batchNumber: '',
-        price: 42,
-        scanConfidence: 0,
-        scanSource: 'seed',
-        createdAt: now,
-        updatedAt: now,
-      ),
-    ];
   }
 }

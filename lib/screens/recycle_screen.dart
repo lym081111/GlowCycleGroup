@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/beauty_product.dart';
 import '../models/recycle_lookup.dart';
 import '../models/recycle_point.dart';
 import '../services/recycle_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/info_widgets.dart';
-import '../widgets/layout_widgets.dart';
 
-/// Nearby recycling drop-off points, searched around the device's location
-/// when it is available and the UTAR Kampar reference otherwise.
+/// A live OSM map and point picker. When a finished product is supplied, the
+/// final confirmation is the only place that writes its Recycled status.
 class RecycleScreen extends StatefulWidget {
-  const RecycleScreen({super.key});
+  const RecycleScreen({super.key, this.product, this.onRecycled});
+
+  final BeautyProduct? product;
+  final Future<void> Function()? onRecycled;
 
   @override
   State<RecycleScreen> createState() => _RecycleScreenState();
@@ -19,7 +23,17 @@ class RecycleScreen extends StatefulWidget {
 
 class _RecycleScreenState extends State<RecycleScreen> {
   RecycleLookup? _lookup;
+  RecyclePoint? _selectedPoint;
   var _searching = false;
+  var _confirming = false;
+
+  bool get _isContainerFlow =>
+      widget.product != null && widget.onRecycled != null;
+
+  bool get _canConfirm =>
+      _isContainerFlow &&
+      widget.product!.resolvedStatus(DateTime.now()) == 'Finished' &&
+      _selectedPoint != null;
 
   @override
   void initState() {
@@ -27,11 +41,39 @@ class _RecycleScreenState extends State<RecycleScreen> {
     _search();
   }
 
-  /// Opens the point in Google Maps, or whatever handles map links.
-  ///
-  /// Coordinates are used rather than the address text, because most OSM
-  /// entries here carry no address and a name alone would not resolve.
-  Future<void> _openInMaps(RecyclePoint point) async {
+  Future<void> _search({bool announce = false}) async {
+    if (_searching) {
+      return;
+    }
+    setState(() => _searching = true);
+    final position = await RecycleService.currentPosition();
+    final result = await RecycleService.fetchRecyclePoints(
+      latitude: position?.latitude,
+      longitude: position?.longitude,
+      forceRefresh: announce,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _lookup = result;
+      _selectedPoint = result.points.isEmpty ? null : result.points.first;
+      _searching = false;
+    });
+    if (announce) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.errorNote ??
+                '${result.points.length} recycle point(s) found.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _openDirections(RecyclePoint point) async {
     final uri = Uri.parse(
       'https://www.google.com/maps/search/?api=1'
       '&query=${point.latitude},${point.longitude}',
@@ -47,48 +89,56 @@ class _RecycleScreenState extends State<RecycleScreen> {
     }
   }
 
-  /// Runs the lookup and reports the outcome.
-  ///
-  /// A repeat search usually returns the same places, so without [announce]
-  /// the refresh button looked inert even though it had worked.
-  Future<void> _search({bool announce = false}) async {
-    if (_searching) {
+  Future<void> _confirmRecycle() async {
+    final product = widget.product;
+    final point = _selectedPoint;
+    if (product == null || point == null || !_canConfirm || _confirming) {
       return;
     }
-    setState(() => _searching = true);
-    final position = await RecycleService.currentPosition();
-    final result = await RecycleService.fetchRecyclePoints(
-      latitude: position?.latitude,
-      longitude: position?.longitude,
-      // Tapping refresh should genuinely re-query, not reuse the cache.
-      forceRefresh: announce,
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm recycling'),
+        content: Text('Mark ${product.name} as recycled at ${point.name}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Not yet'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('I recycled it'),
+          ),
+        ],
+      ),
     );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    setState(() => _confirming = true);
+    await widget.onRecycled!();
     if (!mounted) {
       return;
     }
-    setState(() {
-      _lookup = result;
-      _searching = false;
-    });
-    if (announce) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.errorNote ??
-                'Search complete: ${result.points.length} point(s) '
-                    'within ${result.radiusKm} km.',
-          ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${product.name} marked as recycled.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    Navigator.of(context).pop(true);
   }
 
   @override
   Widget build(BuildContext context) {
+    final lookup = _lookup;
+    final title = _isContainerFlow
+        ? 'Choose a recycle point'
+        : 'Nearby recycling';
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Nearby recycling'),
+        title: Text(title),
         actions: [
           IconButton(
             tooltip: _searching ? 'Searching...' : 'Search again',
@@ -99,243 +149,377 @@ class _RecycleScreenState extends State<RecycleScreen> {
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.refresh),
+                : const Icon(Icons.my_location_outlined),
           ),
         ],
       ),
-      body: Builder(
-        builder: (context) {
-          final lookup = _lookup;
-          if (lookup == null) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(34),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 14),
-                    Text('Finding recycling points near you...'),
-                  ],
-                ),
-              ),
-            );
-          }
-          return ListView(
-            padding: EdgeInsets.fromLTRB(
-              20,
-              12,
-              20,
-              24 + MediaQuery.viewPaddingOf(context).bottom,
+      body: lookup == null
+          ? const _SearchingIndicator()
+          : lookup.failed || lookup.points.isEmpty
+          ? _NoRecyclePoints(
+              message:
+                  lookup.errorNote ??
+                  'No recycling point is mapped near ${lookup.originLabel}.',
+              onSearchAgain: () => _search(announce: true),
+            )
+          : _RecyclePicker(
+              lookup: lookup,
+              selectedPoint: _selectedPoint,
+              product: widget.product,
+              canConfirm: _canConfirm,
+              confirming: _confirming,
+              onSelect: (point) => setState(() => _selectedPoint = point),
+              onDirections: _openDirections,
+              onConfirm: _confirmRecycle,
             ),
-            children: [
-              const AppHeader(
-                title: 'Recycle points',
-                subtitle:
-                    'Live OpenStreetMap data for responsible packaging disposal.',
-              ),
-              const SizedBox(height: 14),
-              _SourceBanner(lookup: lookup),
-              const SizedBox(height: 16),
-              if (lookup.isUnmapped) const _UnmappedFinding(),
-              ...lookup.points.map(
-                (point) => Card(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.place_outlined, color: sage),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                point.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 18,
-                                  color: ink,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          point.address,
-                          style: TextStyle(
-                            color: ink.withValues(alpha: 0.74),
-                            height: 1.35,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        InfoPill(
-                          icon: Icons.recycling,
-                          text: point.acceptedItems,
-                        ),
-                        const SizedBox(height: 8),
-                        InfoPill(
-                          icon: Icons.schedule,
-                          text: point.openingHours,
-                        ),
-                        const SizedBox(height: 8),
-                        InfoPill(
-                          icon: Icons.social_distance,
-                          text:
-                              '${point.distanceKm.toStringAsFixed(1)} km from ${lookup.originLabel}',
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: () => _openInMaps(point),
-                            icon: const Icon(
-                              Icons.directions_outlined,
-                              size: 18,
-                            ),
-                            label: const Text('Open in Google Maps'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
     );
   }
 }
 
-/// Says where the search ran and what it returned.
-class _SourceBanner extends StatelessWidget {
-  const _SourceBanner({required this.lookup});
+class _RecyclePicker extends StatelessWidget {
+  const _RecyclePicker({
+    required this.lookup,
+    required this.selectedPoint,
+    required this.product,
+    required this.canConfirm,
+    required this.confirming,
+    required this.onSelect,
+    required this.onDirections,
+    required this.onConfirm,
+  });
 
   final RecycleLookup lookup;
+  final RecyclePoint? selectedPoint;
+  final BeautyProduct? product;
+  final bool canConfirm;
+  final bool confirming;
+  final ValueChanged<RecyclePoint> onSelect;
+  final Future<void> Function(RecyclePoint point) onDirections;
+  final Future<void> Function() onConfirm;
 
   @override
   Widget build(BuildContext context) {
-    final ok = !lookup.failed;
-    final count = lookup.points.length;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: ok ? mint : blush,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            ok ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
-            color: ok ? primary : brandPink,
+    final focus = selectedPoint ?? lookup.points.first;
+    return Stack(
+      children: [
+        FlutterMap(
+          options: MapOptions(
+            initialCenter: LatLng(focus.latitude, focus.longitude),
+            initialZoom: lookup.expanded ? 9.5 : 12.5,
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  !ok
-                      ? 'Search unavailable'
-                      : lookup.expanded
-                      ? 'None near you'
-                      : 'Live OpenStreetMap data',
-                  style: const TextStyle(
-                    color: ink,
-                    fontWeight: FontWeight.w900,
-                  ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.glowcycle.glowcycle',
+            ),
+            MarkerLayer(
+              markers: [
+                Marker(
+                  point: LatLng(lookup.originLatitude, lookup.originLongitude),
+                  width: 42,
+                  height: 42,
+                  child: const _LocationMarker(),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  lookup.errorNote ??
-                      (lookup.expanded
-                          ? 'No recycling point is mapped within '
-                                '${lookup.nearRadiusKm} km of ${lookup.originLabel}. '
-                                'These are the $count nearest in the country, up to '
-                                '${lookup.radiusKm} km away.'
-                          : '$count point(s) found within ${lookup.radiusKm} km of '
-                                '${lookup.originLabel}, via the Overpass API.'),
-                  style: TextStyle(
-                    color: ink.withValues(alpha: 0.72),
-                    height: 1.3,
+                for (final point in lookup.points)
+                  Marker(
+                    point: LatLng(point.latitude, point.longitude),
+                    width: 48,
+                    height: 56,
+                    alignment: Alignment.topCenter,
+                    child: GestureDetector(
+                      onTap: () => onSelect(point),
+                      child: _RecycleMarker(
+                        selected: point.id == selectedPoint?.id,
+                      ),
+                    ),
                   ),
+              ],
+            ),
+            const RichAttributionWidget(
+              attributions: [
+                TextSourceAttribution('OpenStreetMap contributors'),
+              ],
+            ),
+          ],
+        ),
+        DraggableScrollableSheet(
+          initialChildSize: 0.48,
+          minChildSize: 0.36,
+          maxChildSize: 0.78,
+          builder: (context, scrollController) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x1F1A1C1C),
+                  blurRadius: 18,
+                  offset: Offset(0, -3),
                 ),
               ],
             ),
+            child: ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 18),
+              children: [
+                Align(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: outlineVariant,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  'Nearby recycle points',
+                  style: TextStyle(
+                    color: ink,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                for (final point in lookup.points)
+                  _RecyclePointTile(
+                    point: point,
+                    selected: point.id == selectedPoint?.id,
+                    onTap: () => onSelect(point),
+                    onDirections: () => onDirections(point),
+                  ),
+                if (product != null) ...[
+                  const SizedBox(height: 6),
+                  if (!canConfirm)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        'Mark this product finished on your Shelf before confirming recycling.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: tertiary, fontSize: 12),
+                      ),
+                    ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: selectedPoint == null
+                          ? null
+                          : () => onDirections(selectedPoint!),
+                      icon: const Icon(Icons.directions_outlined),
+                      label: const Text('Go to recycle point'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: canConfirm && !confirming ? onConfirm : null,
+                      child: Text(
+                        confirming
+                            ? 'Recording recycling...'
+                            : 'I recycled this container',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'This will mark ${product!.name} as Recycled.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: ink.withValues(alpha: 0.56),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
-        ],
+        ),
+      ],
+    );
+  }
+}
+
+class _RecyclePointTile extends StatelessWidget {
+  const _RecyclePointTile({
+    required this.point,
+    required this.selected,
+    required this.onTap,
+    required this.onDirections,
+  });
+
+  final RecyclePoint point;
+  final bool selected;
+  final VoidCallback onTap;
+  final Future<void> Function() onDirections;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: selected ? primary : ink.withValues(alpha: 0.08),
+          width: selected ? 1.5 : 1,
+        ),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.location_on, color: primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      point.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: ink,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${point.distanceKm.toStringAsFixed(1)} km  •  ${point.address}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: ink.withValues(alpha: 0.58),
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Accepts ${point.acceptedItems}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: tertiary, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              selected
+                  ? const Icon(Icons.check_circle, color: primary)
+                  : IconButton(
+                      tooltip: 'Directions',
+                      onPressed: onDirections,
+                      icon: const Icon(Icons.directions_outlined),
+                    ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-/// Reports an empty search as the finding it is.
-///
-/// Nothing mapped nearby is a fact about open-data coverage, not a failure of
-/// the app, and inventing places to fill the screen would hide it.
-class _UnmappedFinding extends StatelessWidget {
-  const _UnmappedFinding();
+class _RecycleMarker extends StatelessWidget {
+  const _RecycleMarker({required this.selected});
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Icon(
+      Icons.location_on,
+      size: selected ? 46 : 40,
+      color: selected ? primary : tertiary,
+      shadows: const [Shadow(color: Colors.black26, blurRadius: 5)],
+    );
+  }
+}
+
+class _LocationMarker extends StatelessWidget {
+  const _LocationMarker();
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: ink.withValues(alpha: 0.08)),
+      decoration: const BoxDecoration(color: blue, shape: BoxShape.circle),
+      child: Container(
+        margin: const EdgeInsets.all(7),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.travel_explore_outlined, color: secondary),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Nothing mapped here yet',
-                  style: TextStyle(
-                    color: ink,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 17,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'The search worked; this area simply has no recycling point '
-            'recorded in OpenStreetMap. Coverage across Malaysia is uneven and '
-            'concentrated in the larger cities, so rural areas often return '
-            'nothing at all.',
-            style: TextStyle(color: ink.withValues(alpha: 0.74), height: 1.35),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: mint,
-              borderRadius: BorderRadius.circular(8),
+    );
+  }
+}
+
+/// Overpass can take up to ~30s per radius and this screen tries up to three
+/// radii, so a bare spinner reads as a freeze well before it resolves.
+class _SearchingIndicator extends StatelessWidget {
+  const _SearchingIndicator();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text(
+              'Searching OpenStreetMap for recycling points near you.\n'
+              'This can take up to a minute when nothing is mapped close by.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: ink, height: 1.4),
             ),
-            child: Text(
-              'You can change this: adding a real drop-off point to '
-              'openstreetmap.org puts it on the map for everyone, including '
-              'this app.',
-              style: TextStyle(
-                color: ink.withValues(alpha: 0.8),
-                height: 1.3,
-                fontSize: 13,
-              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NoRecyclePoints extends StatelessWidget {
+  const _NoRecyclePoints({required this.message, required this.onSearchAgain});
+
+  final String message;
+  final VoidCallback onSearchAgain;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.travel_explore_outlined,
+              color: tertiary,
+              size: 44,
             ),
-          ),
-        ],
+            const SizedBox(height: 14),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: ink, height: 1.35),
+            ),
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: onSearchAgain,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Search again'),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 
-/// Large screen title with a supporting sentence.
+/// Large screen title with an optional supporting sentence.
 class AppHeader extends StatelessWidget {
-  const AppHeader({super.key, required this.title, required this.subtitle});
+  const AppHeader({super.key, required this.title, this.subtitle});
 
   final String title;
-  final String subtitle;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -23,11 +23,13 @@ class AppHeader extends StatelessWidget {
             letterSpacing: 0,
           ),
         ),
-        const SizedBox(height: 5),
-        Text(
-          subtitle,
-          style: TextStyle(color: ink.withValues(alpha: 0.64), height: 1.35),
-        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: 5),
+          Text(
+            subtitle!,
+            style: TextStyle(color: ink.withValues(alpha: 0.64), height: 1.35),
+          ),
+        ],
       ],
     );
   }

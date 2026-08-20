@@ -10,6 +10,8 @@ class RecycleLookup {
   const RecycleLookup({
     required this.points,
     required this.originLabel,
+    required this.originLatitude,
+    required this.originLongitude,
     required this.radiusKm,
     required this.nearRadiusKm,
     this.errorNote,
@@ -21,6 +23,11 @@ class RecycleLookup {
 
   /// Human-readable description of the search centre.
   final String originLabel;
+
+  /// Search centre, used to show the user's (or fallback) location on the
+  /// recycle picker map.
+  final double originLatitude;
+  final double originLongitude;
 
   /// How far out the search actually reached to find [points].
   final int radiusKm;

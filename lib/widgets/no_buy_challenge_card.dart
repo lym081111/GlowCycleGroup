@@ -5,8 +5,8 @@ import '../models/eco_action.dart';
 import '../models/no_buy_challenge.dart';
 import '../theme/app_colors.dart';
 
-/// Runs the no-buy challenge: start it, watch the days accumulate, claim it
-/// once it has genuinely run for [EcoRewards.noBuyChallengeDays].
+/// Runs the no-buy challenge: start it, watch the days accumulate, and record
+/// its completion only once it has genuinely run for the required duration.
 class NoBuyChallengeCard extends StatelessWidget {
   const NoBuyChallengeCard({
     super.key,
@@ -25,10 +25,13 @@ class NoBuyChallengeCard extends StatelessWidget {
     final total = EcoRewards.noBuyChallengeDays;
 
     if (challenge.broken) {
+      // Amber, not the error-red blush/brandPink pairing: this is behavioural
+      // feedback on a habit-forming feature, not a system failure, and it
+      // shouldn't read as punitive.
       return _Panel(
         icon: Icons.refresh,
-        tone: blush,
-        accent: brandPink,
+        tone: champagne,
+        accent: amber,
         title: 'Challenge ended early',
         body: challenge.brokenBy == null
             ? 'A new product was added before the $total days were up.'
@@ -47,9 +50,7 @@ class NoBuyChallengeCard extends StatelessWidget {
         tone: mint,
         accent: primary,
         title: '$total-day no-buy challenge',
-        body:
-            'Add no new product for $total days to earn '
-            '${EcoRewards.noBuyChallenge} eco points.',
+        body: 'Add no new product for $total days to reduce duplicate buying.',
         action: FilledButton.icon(
           onPressed: onStart,
           icon: const Icon(Icons.play_arrow_outlined),
@@ -75,7 +76,7 @@ class NoBuyChallengeCard extends StatelessWidget {
       action: FilledButton.icon(
         onPressed: challenge.readyToClaim ? onClaim : null,
         icon: const Icon(Icons.eco_outlined),
-        label: Text('Claim +${EcoRewards.noBuyChallenge}'),
+        label: const Text('Record completion'),
       ),
     );
   }

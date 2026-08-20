@@ -12,10 +12,14 @@ class InventoryScreen extends StatefulWidget {
     super.key,
     required this.products,
     required this.onProductTap,
+    required this.onFinished,
+    required this.onRecycle,
   });
 
   final List<BeautyProduct> products;
   final ValueChanged<BeautyProduct> onProductTap;
+  final Future<void> Function(BeautyProduct product) onFinished;
+  final Future<void> Function(BeautyProduct product) onRecycle;
 
   @override
   State<InventoryScreen> createState() => _InventoryScreenState();
@@ -29,7 +33,14 @@ class _InventoryScreenState extends State<InventoryScreen> {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
+    const archivedStatuses = {'Expired', 'Finished', 'Recycled'};
     final filtered = widget.products.where((product) {
+      // The normal Shelf stays focused on products that can still be used.
+      // Archived records remain available through their explicit status chips.
+      if (_status == 'All' &&
+          archivedStatuses.contains(product.resolvedStatus(now))) {
+        return false;
+      }
       final text = '${product.name} ${product.brand}'.toLowerCase();
       final matchesQuery = text.contains(_query.toLowerCase());
       final matchesCategory =
@@ -39,64 +50,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
       return matchesQuery && matchesCategory && matchesStatus;
     }).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-    // In All Items, keep active products easy to browse and send lifecycle
-    // records to the bottom without hiding them. A product is still sorted by
-    // its original added date within its own section.
-    const pastStatuses = {'Expired', 'Finished', 'Recycled'};
-    final isAllItemsView = _category == 'All' && _status == 'All';
-    final activeProducts = filtered
-        .where((product) => !pastStatuses.contains(product.resolvedStatus(now)))
-        .toList();
-    final pastProducts = filtered
-        .where((product) => pastStatuses.contains(product.resolvedStatus(now)))
-        .toList();
-
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
       children: [
-        const AppHeader(
-          title: 'My Beauty Shelf',
-          subtitle:
-              'Your newest additions, with past items kept out of the way.',
-        ),
+        const AppHeader(title: 'My Beauty Shelf'),
         const SizedBox(height: 14),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          decoration: BoxDecoration(
-            color: surfaceHigh,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: ink.withValues(alpha: 0.06)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.south_outlined, color: primary, size: 18),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text: '${filtered.length} item(s)',
-                        style: const TextStyle(
-                          color: ink,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      TextSpan(
-                        text: ' - newest added first',
-                        style: TextStyle(color: ink.withValues(alpha: 0.62)),
-                      ),
-                    ],
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 13),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
         TextField(
           onChanged: (value) => setState(() => _query = value),
           decoration: const InputDecoration(
@@ -105,7 +63,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
           ),
         ),
         const SizedBox(height: 10),
-        SingleChildScrollView(
+        _EdgeFade(
+          child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
             children: [
@@ -147,39 +106,40 @@ class _InventoryScreenState extends State<InventoryScreen> {
             ],
           ),
         ),
+        ),
         const SizedBox(height: 10),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              // Every value resolvedStatus can return needs a chip, or those
-              // products match no filter but "All" and look missing.
-              for (final status in [
-                'All',
-                'Safe',
-                'Unopened',
-                'Use Soon',
-                'Expired',
-                'Finished',
-                'Recycled',
-              ])
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    selected: _status == status,
-                    label: Text(status),
-                    onSelected: (_) => setState(() => _status = status),
-                    selectedColor: secondaryContainer,
-                    backgroundColor: surfaceLow,
-                    labelStyle: TextStyle(
-                      color: _status == status
-                          ? secondary
-                          : const Color(0xFF424941),
-                      fontWeight: FontWeight.w700,
+        _EdgeFade(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final status in [
+                  'All',
+                  'Safe',
+                  'Unopened',
+                  'Use Soon',
+                  'Expired',
+                  'Finished',
+                  'Recycled',
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      selected: _status == status,
+                      label: Text(status),
+                      onSelected: (_) => setState(() => _status = status),
+                      selectedColor: secondaryContainer,
+                      backgroundColor: surfaceLow,
+                      labelStyle: TextStyle(
+                        color: _status == status
+                            ? secondary
+                            : const Color(0xFF424941),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 16),
@@ -190,55 +150,37 @@ class _InventoryScreenState extends State<InventoryScreen> {
             message:
                 'Try another filter or add a product to your beauty shelf.',
           )
-        else if (isAllItemsView) ...[
-          if (activeProducts.isNotEmpty)
-            BeautyShelfView(
-              products: activeProducts,
-              onProductTap: widget.onProductTap,
-            ),
-          if (pastProducts.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(child: Divider(color: ink.withValues(alpha: 0.1))),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 10),
-                  child: Text(
-                    'PAST ITEMS',
-                    style: TextStyle(
-                      color: secondary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.8,
-                    ),
-                  ),
-                ),
-                Expanded(child: Divider(color: ink.withValues(alpha: 0.1))),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Expired, finished and recycled products are kept here for your records.',
-              style: TextStyle(
-                color: ink.withValues(alpha: 0.55),
-                fontSize: 12,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Opacity(
-              opacity: 0.68,
-              child: BeautyShelfView(
-                products: pastProducts,
-                onProductTap: widget.onProductTap,
-              ),
-            ),
-          ],
-        ] else
+        else
           BeautyShelfView(
             products: filtered,
             onProductTap: widget.onProductTap,
+            onFinished: widget.onFinished,
+            onRecycle: widget.onRecycle,
           ),
       ],
+    );
+  }
+}
+
+/// Fades the trailing edge of a horizontally scrolling row, so a chip cut
+/// off at the screen edge reads as "more to scroll" rather than a rendering
+/// glitch.
+class _EdgeFade extends StatelessWidget {
+  const _EdgeFade({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ShaderMask(
+      shaderCallback: (bounds) => const LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [Colors.black, Colors.black, Colors.transparent],
+        stops: [0, 0.9, 1],
+      ).createShader(bounds),
+      blendMode: BlendMode.dstIn,
+      child: child,
     );
   }
 }

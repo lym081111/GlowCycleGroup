@@ -12,12 +12,20 @@ import 'product_cards.dart';
 
 /// Gradient greeting card carrying the two headline shelf metrics.
 class DashboardWelcomeCard extends StatelessWidget {
-  const DashboardWelcomeCard({super.key, required this.stats});
+  const DashboardWelcomeCard({
+    super.key,
+    required this.stats,
+    required this.userName,
+  });
 
   final InventoryStats stats;
+  final String userName;
 
   @override
   Widget build(BuildContext context) {
+    final greetingName = userName.isEmpty
+        ? 'there'
+        : userName[0].toUpperCase() + userName.substring(1);
     return Container(
       // Kept tight so the three quick actions clear the fold.
       padding: const EdgeInsets.all(16),
@@ -41,9 +49,9 @@ class DashboardWelcomeCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Hello, User!',
-            style: TextStyle(
+          Text(
+            'Hello, $greetingName!',
+            style: const TextStyle(
               color: Color(0xFF153B1C),
               fontSize: 22,
               fontWeight: FontWeight.w900,
@@ -69,9 +77,9 @@ class DashboardWelcomeCard extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: DashboardMetricTile(
-                  label: 'Eco Points',
-                  value: stats.points.toString(),
-                  icon: Icons.eco,
+                  label: 'Recycled',
+                  value: stats.recycled.toString(),
+                  icon: Icons.recycling,
                   color: tertiary,
                 ),
               ),
@@ -411,7 +419,7 @@ class ActivityRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  'Earned ${action.pointsEarned} Eco Points - ${dateFormat.format(action.date)}',
+                  dateFormat.format(action.date),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

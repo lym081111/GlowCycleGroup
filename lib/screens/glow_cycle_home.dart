@@ -144,7 +144,7 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
             actionType: EcoActionTypes.duplicateReversed,
             pointsEarned: -EcoRewards.avoidDuplicate,
             description:
-                'Bought ${product.category} after skipping it today, so those points were returned.',
+                'Added ${product.category} after marking a purchase as avoided.',
             category: product.category,
           ),
         EcoAction.created(
@@ -158,9 +158,7 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
       ];
     });
     if (reverseSkip) {
-      _showEcoMessage(
-        'Skipped-purchase points for ${product.category} were returned.',
-      );
+      _showEcoMessage('Your ${product.category} purchase was recorded.');
     }
     await _persist();
   }
@@ -212,7 +210,7 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
       }
     });
     if (paid) {
-      _showEcoMessage('${product.name} already earned its finishing points.');
+      _showEcoMessage('${product.name} was already marked finished.');
     }
     await _persist();
   }
@@ -239,7 +237,7 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
       }
     });
     if (paid) {
-      _showEcoMessage('${product.name} already earned its recycling points.');
+      _showEcoMessage('${product.name} was already marked recycled.');
     }
     await _persist();
   }
@@ -319,20 +317,31 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
     final screens = [
       DashboardScreen(
         products: _products,
-        actions: _actions,
+        userName: widget.user.displayName,
         onAddTap: () => _openProductForm(),
         onWishlistTap: _openWishlistCheck,
         onLogContainer: _openLogContainer,
         onNavigate: (index) => setState(() => _selectedIndex = index),
       ),
-      InventoryScreen(products: _products, onProductTap: _openProductDetail),
+      InventoryScreen(
+        products: _products,
+        onProductTap: _openProductDetail,
+        onFinished: _markFinished,
+        onRecycle: (product) => _openRecycleMap(product: product),
+      ),
       ProductFormScreen(
         onSave: _addProduct,
         store: _store,
         closeOnSave: false,
         onSaved: () => setState(() => _selectedIndex = 1),
       ),
-      GlowAssistantScreen(products: _products, store: _store),
+      GlowAssistantScreen(
+        products: _products,
+        store: _store,
+        userInitial: widget.user.displayName.isEmpty
+            ? 'U'
+            : widget.user.displayName.substring(0, 1).toUpperCase(),
+      ),
       GlowSaverScreen(
         products: _products,
         actions: _actions,
@@ -340,6 +349,8 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
         onClaimNoBuyChallenge: _claimNoBuyChallenge,
         onOpenRecycleMap: _openRecycleMap,
         onOpenWishlistCheck: _openWishlistCheck,
+        onOpenShelf: () => setState(() => _selectedIndex = 1),
+        onLogContainer: _openLogContainer,
       ),
     ];
 
@@ -368,7 +379,7 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
                 if (_selectedIndex != 2)
                   GlowTopBar(
                     user: widget.user,
-                    onNotifications: _openEcoPoints,
+                    onImpactRecords: _openImpactRecords,
                     onRecycleMap: _openRecycleMap,
                     onSignOut: widget.onSignOut,
                   ),
@@ -446,7 +457,7 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
           onEdit: () => _openProductForm(product: latest),
           onDelete: () => _deleteProduct(latest.id),
           onFinished: () => _markFinished(latest),
-          onRecycled: () => _markRecycled(latest),
+          onRecycled: () => _openRecycleMap(product: latest),
         ),
       ),
     );
@@ -454,15 +465,10 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
 
   /// Step six of the proposal's user journey: reflect on points, badges, and
   /// recent sustainable actions. Reached from the top bar's eco impact icon.
-  Future<void> _openEcoPoints() async {
+  Future<void> _openImpactRecords() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => EcoPointsScreen(
-          products: _products,
-          actions: _actions,
-          onStartNoBuyChallenge: _startNoBuyChallenge,
-          onClaimNoBuyChallenge: _claimNoBuyChallenge,
-        ),
+        builder: (_) => EcoPointsScreen(products: _products, actions: _actions),
       ),
     );
   }
@@ -474,17 +480,21 @@ class _GlowCycleHomeState extends State<GlowCycleHome> {
       MaterialPageRoute(
         builder: (_) => LogContainerScreen(
           products: _products,
-          actions: _actions,
-          onFinished: _markFinished,
-          onRecycled: _markRecycled,
+          onFindRecyclePoint: (product) => _openRecycleMap(product: product),
         ),
       ),
     );
   }
 
-  Future<void> _openRecycleMap() async {
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const RecycleScreen()));
+  Future<bool> _openRecycleMap({BeautyProduct? product}) async {
+    final recycled = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => RecycleScreen(
+          product: product,
+          onRecycled: product == null ? null : () => _markRecycled(product),
+        ),
+      ),
+    );
+    return recycled ?? false;
   }
 }

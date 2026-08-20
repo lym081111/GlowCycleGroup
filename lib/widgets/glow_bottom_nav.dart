@@ -17,10 +17,8 @@ class GlowBottomNav extends StatelessWidget {
     (Icons.home_outlined, Icons.home, 'Home'),
     (Icons.inventory_2_outlined, Icons.inventory_2, 'Shelf'),
     (Icons.document_scanner_outlined, Icons.document_scanner, 'Scan'),
-    // A chat bubble: the tab is a conversation, and its silhouette stays
-    // distinct from the star now used for eco points.
     (Icons.chat_bubble_outline, Icons.chat_bubble, 'Assistant'),
-    (Icons.savings_outlined, Icons.savings, 'Saver'),
+    (Icons.autorenew_outlined, Icons.autorenew, 'Cycle'),
   ];
 
   @override

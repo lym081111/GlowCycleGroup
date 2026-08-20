@@ -135,7 +135,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
                       icon: const Icon(Icons.eco_outlined),
                       label: Text(
                         _saved
-                            ? 'Eco points added'
+                            ? 'Purchase avoided today'
                             : 'I will skip this purchase',
                       ),
                     ),

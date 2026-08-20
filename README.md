@@ -7,6 +7,18 @@ Slogan: **Track beauty. Reduce waste. Glow responsibly.**
 
 ## Assignment Coverage
 
+### SDG 12 and Circular Economy Alignment
+
+- **Behavioural transformation:** expiry priorities, a duplicate-purchase
+  check, and a real seven-day no-buy challenge prompt users to use what they
+  already own before purchasing more.
+- **Closing the loop:** the Cycle Plan connects a finished cosmetic product to
+  its empty-container log and live nearby recycling locations, so a user can
+  move from use to handoff rather than treating disposal as an afterthought.
+- **Data-driven utility:** product dates turn into Safe, Use Soon, Expired,
+  Finished, and Recycled states, giving users a concrete next action for each
+  stage of the beauty-product lifecycle.
+
 Minimum requirements:
 
 - **Custom launcher icon** — beauty bottle with a circular economy arrow,
@@ -57,12 +69,13 @@ each point links out to Google Maps. There is deliberately no mock data: an area
 with nothing mapped is reported as a finding, and the screen invites the user to
 add real locations to OpenStreetMap.
 
-**Eco points** — awarded for finishing products, recycling containers, skipping
-duplicate purchases, and completing a seven day no-buy challenge. Awards are
-earned once per product, the duplicate skip is limited to one per category per
-day and is reversed if the user buys into that category anyway, and the
-challenge measures real elapsed days. A waste-avoidance rate derived from
-product outcomes sits alongside the points, and unlike them it can fall.
+**Cycle Plan and impact record** — turns shelf data into an explicit circular
+workflow: use a product before it expires, mark it finished, take the empty
+container to a live recycling location, and record the handoff. It also
+supports a seven-day no-buy challenge and duplicate-purchase check to nudge
+more sustainable decisions. The impact view shows traceable actions and a
+lifecycle-completion rate derived from real product outcomes, rather than
+presenting internal points as financial savings.
 
 ## Project Structure
 

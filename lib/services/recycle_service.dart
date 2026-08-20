@@ -116,9 +116,17 @@ class RecycleService {
           response = await _post(radius, lat, lng);
         }
         if (response.statusCode != 200) {
+          if (radius != searchRadiiMetres.last) {
+            // This radius failed to answer in time. A wider query sometimes
+            // succeeds where a narrower one just timed out on Overpass's
+            // side, so keep widening before reporting an error.
+            continue;
+          }
           return RecycleLookup(
             points: const [],
             originLabel: origin,
+            originLatitude: lat,
+            originLongitude: lng,
             radiusKm: radiusKm,
             nearRadiusKm: nearRadiusKm,
             errorNote: _describeStatus(response.statusCode),
@@ -132,6 +140,8 @@ class RecycleService {
         final lookup = RecycleLookup(
           points: points.take(8).toList(),
           originLabel: origin,
+          originLatitude: lat,
+          originLongitude: lng,
           radiusKm: radiusKm,
           nearRadiusKm: nearRadiusKm,
         );
@@ -145,6 +155,8 @@ class RecycleService {
         return RecycleLookup(
           points: const [],
           originLabel: origin,
+          originLatitude: lat,
+          originLongitude: lng,
           radiusKm: radiusKm,
           nearRadiusKm: nearRadiusKm,
           errorNote: 'Could not reach OpenStreetMap.',
@@ -155,6 +167,8 @@ class RecycleService {
     return RecycleLookup(
       points: const [],
       originLabel: origin,
+      originLatitude: lat,
+      originLongitude: lng,
       radiusKm: (searchRadiiMetres.last / 1000).round(),
       nearRadiusKm: nearRadiusKm,
     );

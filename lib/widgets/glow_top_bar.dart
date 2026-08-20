@@ -8,13 +8,13 @@ class GlowTopBar extends StatelessWidget {
   const GlowTopBar({
     super.key,
     required this.user,
-    required this.onNotifications,
+    required this.onImpactRecords,
     required this.onRecycleMap,
     required this.onSignOut,
   });
 
   final AppUser user;
-  final VoidCallback onNotifications;
+  final VoidCallback onImpactRecords;
   final VoidCallback onRecycleMap;
   final Future<void> Function() onSignOut;
 
@@ -61,11 +61,9 @@ class GlowTopBar extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: 'Eco impact',
-            onPressed: onNotifications,
-            // Matches the star on the eco points banner: a bell suggested
-            // notifications, which this button has never opened.
-            icon: const Icon(Icons.auto_awesome, color: Color(0xFF424941)),
+            tooltip: 'Impact records',
+            onPressed: onImpactRecords,
+            icon: const Icon(Icons.history_outlined, color: Color(0xFF424941)),
           ),
           IconButton(
             tooltip: 'Nearby recycling',

@@ -232,10 +232,9 @@ class ProductDetailScreen extends StatelessWidget {
                 ? null
                 : () async {
                     await onRecycled();
-                    if (context.mounted) Navigator.pop(context);
                   },
             icon: const Icon(Icons.recycling),
-            label: const Text('Mark container recycled'),
+            label: const Text('Find recycle point'),
           ),
         ],
       ),
