@@ -292,22 +292,32 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      OutlinedButton(
-                        onPressed: () => _pickProductPhoto(ImageSource.camera),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(52, 44),
-                          padding: EdgeInsets.zero,
+                      Semantics(
+                        button: true,
+                        label: 'Take product photo with camera',
+                        child: OutlinedButton(
+                          onPressed: () =>
+                              _pickProductPhoto(ImageSource.camera),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(52, 44),
+                            padding: EdgeInsets.zero,
+                          ),
+                          child: const Icon(Icons.photo_camera_outlined),
                         ),
-                        child: const Icon(Icons.photo_camera_outlined),
                       ),
                       const SizedBox(width: 8),
-                      OutlinedButton(
-                        onPressed: () => _pickProductPhoto(ImageSource.gallery),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(52, 44),
-                          padding: EdgeInsets.zero,
+                      Semantics(
+                        button: true,
+                        label: 'Choose product photo from gallery',
+                        child: OutlinedButton(
+                          onPressed: () =>
+                              _pickProductPhoto(ImageSource.gallery),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(52, 44),
+                            padding: EdgeInsets.zero,
+                          ),
+                          child: const Icon(Icons.photo_library_outlined),
                         ),
-                        child: const Icon(Icons.photo_library_outlined),
                       ),
                       const SizedBox(width: 8),
                       Expanded(

@@ -66,7 +66,7 @@ class GlowTopBar extends StatelessWidget {
             icon: const Icon(Icons.history_outlined, color: Color(0xFF424941)),
           ),
           IconButton(
-            tooltip: 'Nearby recycling',
+            tooltip: 'Recycle map',
             onPressed: onRecycleMap,
             icon: const Icon(Icons.map_outlined, color: Color(0xFF424941)),
           ),

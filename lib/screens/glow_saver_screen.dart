@@ -98,7 +98,7 @@ class GlowSaverScreen extends StatelessWidget {
             child: OutlinedButton.icon(
               onPressed: onOpenRecycleMap,
               icon: const Icon(Icons.map_outlined),
-              label: const Text('Nearby recycling'),
+              label: const Text('Recycle map'),
             ),
           )
         else
@@ -113,7 +113,7 @@ class GlowSaverScreen extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               IconButton.filledTonal(
-                tooltip: 'Nearby recycling',
+                tooltip: 'Recycle map',
                 onPressed: onOpenRecycleMap,
                 icon: const Icon(Icons.map_outlined),
               ),

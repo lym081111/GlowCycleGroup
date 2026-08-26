@@ -132,9 +132,7 @@ class _RecycleScreenState extends State<RecycleScreen> {
   @override
   Widget build(BuildContext context) {
     final lookup = _lookup;
-    final title = _isContainerFlow
-        ? 'Choose a recycle point'
-        : 'Nearby recycling';
+    final title = _isContainerFlow ? 'Choose a recycle point' : 'Recycle map';
 
     return Scaffold(
       appBar: AppBar(
@@ -274,7 +272,7 @@ class _RecyclePicker extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
                 const Text(
-                  'Nearby recycle points',
+                  'Nearest mapped recycle points',
                   style: TextStyle(
                     color: ink,
                     fontSize: 18,
@@ -289,8 +287,19 @@ class _RecyclePicker extends StatelessWidget {
                     onTap: () => onSelect(point),
                     onDirections: () => onDirections(point),
                   ),
+                const SizedBox(height: 2),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: selectedPoint == null
+                        ? null
+                        : () => onDirections(selectedPoint!),
+                    icon: const Icon(Icons.directions_outlined),
+                    label: const Text('Go to recycle point'),
+                  ),
+                ),
                 if (product != null) ...[
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 10),
                   if (!canConfirm)
                     const Padding(
                       padding: EdgeInsets.only(bottom: 10),
@@ -300,17 +309,6 @@ class _RecyclePicker extends StatelessWidget {
                         style: TextStyle(color: tertiary, fontSize: 12),
                       ),
                     ),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: selectedPoint == null
-                          ? null
-                          : () => onDirections(selectedPoint!),
-                      icon: const Icon(Icons.directions_outlined),
-                      label: const Text('Go to recycle point'),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
