@@ -1,0 +1,26 @@
+import 'package:flutter/material.dart';
+
+const primary = Color(0xFF416743);
+const primaryContainer = Color(0xFFC2EEC0);
+const primaryFixedDim = Color(0xFFA7D1A5);
+const secondary = Color(0xFF6F5A4D);
+const secondaryContainer = Color(0xFFF7DAC9);
+const tertiary = Color(0xFF4E635E);
+const surface = Color(0xFFF9F9F8);
+const surfaceLow = Color(0xFFF3F4F3);
+const surfaceContainer = Color(0xFFEEEEED);
+const surfaceHigh = Color(0xFFE8E8E7);
+const surfaceHighest = Color(0xFFE2E2E2);
+const outlineVariant = Color(0xFFC2C8BE);
+const brandPink = Color(0xFFD8788D);
+const petal = Color(0xFFFFDDE4);
+const blush = Color(0xFFFFF0ED);
+const cream = Color(0xFFFFF8F4);
+const champagne = Color(0xFFFFEBC8);
+const sage = primary;
+const mint = Color(0xFFDDEEDF);
+const ink = Color(0xFF1A1C1C);
+const cocoa = secondary;
+const amber = Color(0xFFE8A041);
+const danger = Color(0xFFC95C5C);
+const blue = Color(0xFF6389B8);

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "296414711609",
+    "project_id": "glowcycle-65bae",
+    "storage_bucket": "glowcycle-65bae.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:296414711609:android:04e30049c1bc0c49c7a2e8",
+        "android_client_info": {
+          "package_name": "com.glowcycle.glowcycle"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAodDcDIB5NpD7gt4Gvn9aEoUeHyjd-UxU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

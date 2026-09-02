@@ -1,0 +1,17 @@
+rules_version = '2';
+
+// Every GlowCycle document lives under users/{uid}, so a signed-in user may
+// read and write their own shelf, eco actions, and assistant history, and
+// nothing belonging to anyone else.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // products, actions, and chats subcollections
+      match /{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+  }
+}
