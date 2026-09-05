@@ -61,9 +61,9 @@ class GlowTopBar extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: 'Impact records',
+            tooltip: 'Eco points and impact',
             onPressed: onImpactRecords,
-            icon: const Icon(Icons.history_outlined, color: Color(0xFF424941)),
+            icon: const Icon(Icons.eco_outlined, color: Color(0xFF424941)),
           ),
           IconButton(
             tooltip: 'Recycle map',

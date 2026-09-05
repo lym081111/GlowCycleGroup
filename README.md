@@ -73,9 +73,11 @@ add real locations to OpenStreetMap.
 workflow: use a product before it expires, mark it finished, take the empty
 container to a live recycling location, and record the handoff. It also
 supports a seven-day no-buy challenge and duplicate-purchase check to nudge
-more sustainable decisions. The impact view shows traceable actions and a
-lifecycle-completion rate derived from real product outcomes, rather than
-presenting internal points as financial savings.
+more sustainable decisions. The impact view shows total eco points, unlocked
+badges, traceable actions, and a lifecycle-completion rate derived from real
+product outcomes. Points follow the assignment rules: add product +1, finish
+before expiry +10, recycle container +15, avoid a duplicate purchase +5, and
+complete the seven-day no-buy challenge +20.
 
 ## Project Structure
 

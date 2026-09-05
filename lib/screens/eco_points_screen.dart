@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../core/constants.dart';
+import '../core/eco_rewards.dart';
+import '../models/badge_rule.dart';
 import '../models/beauty_product.dart';
 import '../models/eco_action.dart';
 import '../models/inventory_stats.dart';
@@ -8,12 +10,7 @@ import '../theme/app_colors.dart';
 import '../widgets/info_widgets.dart';
 import '../widgets/layout_widgets.dart';
 
-/// A traceable log of circular consumption. The old point total was removed:
-/// without a partner reward it implied value that GlowCycle cannot deliver.
-///
-/// This screen is the reflect step: it reviews what already happened. The
-/// no-buy challenge (starting or claiming it) lives only on the Cycle Plan
-/// tab, which is the act step, so the same prompt doesn't appear twice.
+/// Eco points, achievements, and a traceable log of circular consumption.
 class EcoPointsScreen extends StatelessWidget {
   const EcoPointsScreen({
     super.key,
@@ -27,6 +24,7 @@ class EcoPointsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final stats = InventoryStats.from(products, actions, DateTime.now());
+    final badges = BadgeRule.unlocked(products, actions, DateTime.now());
     final rate = stats.wasteAvoidanceRate;
     final percent = rate == null ? null : (rate * 100).round();
 
@@ -40,8 +38,10 @@ class EcoPointsScreen extends StatelessWidget {
           24 + MediaQuery.viewPaddingOf(context).bottom,
         ),
         children: [
-          const AppHeader(title: 'Circular impact'),
+          const AppHeader(title: 'Eco points'),
           const SizedBox(height: 16),
+          _PointsSummary(points: stats.points),
+          const SizedBox(height: 14),
           Row(
             children: [
               Expanded(
@@ -121,6 +121,33 @@ class EcoPointsScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
+          const SectionTitle('How points are earned'),
+          const SizedBox(height: 8),
+          const _PointRulesCard(),
+          const SizedBox(height: 20),
+          const SectionTitle('Badges unlocked'),
+          const SizedBox(height: 8),
+          if (badges.isEmpty)
+            const EmptyState(
+              icon: Icons.workspace_premium_outlined,
+              title: 'No badges yet',
+              message: 'Complete sustainable actions to unlock badges.',
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final badge in badges)
+                  Chip(
+                    avatar: Icon(badge.icon, color: primary, size: 18),
+                    label: Text(badge.label),
+                    backgroundColor: primaryContainer,
+                    side: BorderSide.none,
+                  ),
+              ],
+            ),
+          const SizedBox(height: 20),
           const SectionTitle('Recent actions'),
           const SizedBox(height: 8),
           if (actions.isEmpty)
@@ -131,6 +158,99 @@ class EcoPointsScreen extends StatelessWidget {
             )
           else
             ...actions.map((action) => _ActionRow(action: action)),
+        ],
+      ),
+    );
+  }
+}
+
+class _PointsSummary extends StatelessWidget {
+  const _PointsSummary({required this.points});
+
+  final int points;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: primary,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.16),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.eco_outlined, color: Colors.white),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Text(
+              'Total eco points',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          Text(
+            points.toString(),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 34,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PointRulesCard extends StatelessWidget {
+  const _PointRulesCard();
+
+  @override
+  Widget build(BuildContext context) {
+    const rules = [
+      ('Add a product', EcoRewards.addProduct),
+      ('Finish before expiry', EcoRewards.finishBeforeExpiry),
+      ('Recycle a container', EcoRewards.recycleContainer),
+      ('Avoid a duplicate purchase', EcoRewards.avoidDuplicate),
+      ('Complete the 7-day no-buy challenge', EcoRewards.noBuyChallenge),
+    ];
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ink.withValues(alpha: 0.06)),
+      ),
+      child: Column(
+        children: [
+          for (var index = 0; index < rules.length; index++) ...[
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.eco_outlined, color: primary),
+              title: Text(
+                rules[index].$1,
+                style: const TextStyle(color: ink, fontWeight: FontWeight.w700),
+              ),
+              trailing: Text(
+                '+${rules[index].$2}',
+                style: const TextStyle(
+                  color: primary,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            if (index != rules.length - 1) const Divider(height: 1, indent: 56),
+          ],
         ],
       ),
     );
@@ -168,6 +288,15 @@ class _ActionRow extends StatelessWidget {
         style: const TextStyle(color: ink, fontWeight: FontWeight.w800),
       ),
       subtitle: Text(dateFormat.format(action.date)),
+      trailing: Text(
+        action.pointsEarned > 0
+            ? '+${action.pointsEarned} pts'
+            : '${action.pointsEarned} pts',
+        style: TextStyle(
+          color: action.pointsEarned > 0 ? primary : secondary,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
     );
   }
 }
