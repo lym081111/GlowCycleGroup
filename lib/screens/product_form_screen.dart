@@ -8,6 +8,7 @@ import '../core/constants.dart';
 import '../core/helpers.dart';
 import '../models/beauty_product.dart';
 import '../models/product_scan_result.dart';
+import '../services/glow_store.dart';
 import '../services/product_scan_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/form_fields.dart';
@@ -22,12 +23,14 @@ class ProductFormScreen extends StatefulWidget {
     super.key,
     this.product,
     required this.onSave,
+    required this.store,
     this.closeOnSave = true,
     this.onSaved,
   });
 
   final BeautyProduct? product;
   final Future<void> Function(BeautyProduct product) onSave;
+  final GlowStore store;
   final bool closeOnSave;
   final VoidCallback? onSaved;
 
@@ -721,7 +724,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
 
     try {
       setState(() => _scanning = true);
-      final result = await ProductScanService().scan(
+      final result = await ProductScanService(store: widget.store).scan(
         photos: [
           for (final photo in _scanPhotos)
             (path: photo.path, dataUri: photo.dataUri),
@@ -903,9 +906,10 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       final existing = widget.product;
       final id = existing?.id ?? now.microsecondsSinceEpoch.toString();
       final inlinePhoto = _storedImagePath.trim();
-      // Persistence belongs to the inventory module. Until that branch is
-      // integrated, the reviewed image stays with the returned product model.
-      const uploadedImagePath = '';
+      final uploadedImagePath = await widget.store.uploadProductPhoto(
+        productId: id,
+        dataUri: inlinePhoto,
+      );
       // Scan-quality captures produce large data URIs. When the Storage upload
       // gave us no URL, only keep the photo inline while it is small enough to
       // fit inside a Firestore document.

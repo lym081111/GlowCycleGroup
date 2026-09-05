@@ -1,3 +1,5 @@
+import '../core/eco_rewards.dart';
+
 /// A logged sustainable action, such as finishing or recycling a product.
 class EcoAction {
   EcoAction({
@@ -6,6 +8,7 @@ class EcoAction {
     required this.pointsEarned,
     required this.description,
     required this.date,
+    this.rewardVersion = EcoRewards.rulesVersion,
     this.relatedProductId,
     this.category,
   });
@@ -36,6 +39,7 @@ class EcoAction {
   final int pointsEarned;
   final String description;
   final DateTime date;
+  final int rewardVersion;
   final String? relatedProductId;
 
   /// Product category this action concerned, where one applies.
@@ -57,17 +61,29 @@ class EcoAction {
     'pointsEarned': pointsEarned,
     'description': description,
     'date': date.toIso8601String(),
+    'rewardVersion': rewardVersion,
     'relatedProductId': relatedProductId,
     'category': category,
   };
 
   factory EcoAction.fromJson(Map<String, dynamic> json) {
+    final actionType = json['actionType'] as String;
+    final description = json['description'] as String;
+    final storedPoints = (json['pointsEarned'] as num).toInt();
+    final storedVersion = (json['rewardVersion'] as num?)?.toInt() ?? 1;
     return EcoAction(
       id: json['id'] as String,
-      actionType: json['actionType'] as String,
-      pointsEarned: json['pointsEarned'] as int,
-      description: json['description'] as String,
+      actionType: actionType,
+      pointsEarned: storedVersion >= EcoRewards.rulesVersion
+          ? storedPoints
+          : EcoRewards.normalizeLegacyAction(
+              actionType: actionType,
+              description: description,
+              storedPoints: storedPoints,
+            ),
+      description: description,
       date: DateTime.parse(json['date'] as String),
+      rewardVersion: EcoRewards.rulesVersion,
       relatedProductId: json['relatedProductId'] as String?,
       category: json['category'] as String?,
     );

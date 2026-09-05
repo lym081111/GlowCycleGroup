@@ -1,132 +1,500 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../core/eco_rewards.dart';
+import '../models/app_user.dart';
 import '../models/beauty_product.dart';
+import '../models/eco_action.dart';
+import '../models/no_buy_challenge.dart';
+import '../services/glow_store.dart';
 import '../theme/app_colors.dart';
 import '../widgets/glow_bottom_nav.dart';
-import 'feature_placeholder_screen.dart';
+import '../widgets/glow_top_bar.dart';
+import 'dashboard_screen.dart';
+import 'eco_points_screen.dart';
+import 'glow_assistant_screen.dart';
+import 'glow_saver_screen.dart';
+import 'inventory_screen.dart';
+import 'log_container_screen.dart';
+import 'product_detail_screen.dart';
 import 'product_form_screen.dart';
+import 'recycle_screen.dart';
+import 'wishlist_screen.dart';
 
+/// The signed-in shell.
+///
+/// Owns the product and eco-action lists for the whole session, persists
+/// every mutation through [GlowStore], and swaps the five bottom-nav tabs.
 class GlowCycleHome extends StatefulWidget {
-  const GlowCycleHome({super.key});
+  const GlowCycleHome({super.key, required this.user, required this.onSignOut});
+
+  final AppUser user;
+  final Future<void> Function() onSignOut;
 
   @override
   State<GlowCycleHome> createState() => _GlowCycleHomeState();
 }
 
 class _GlowCycleHomeState extends State<GlowCycleHome> {
+  late final GlowStore _store;
+  var _products = <BeautyProduct>[];
+  var _actions = <EcoAction>[];
   var _selectedIndex = 0;
-  final _scannedProducts = <BeautyProduct>[];
+  var _loading = true;
 
-  Future<void> _addProduct(BeautyProduct product) async {
-    setState(() {
-      _scannedProducts.insert(0, product);
-      _selectedIndex = 0;
+  @override
+  void initState() {
+    super.initState();
+    _store = GlowStore(user: widget.user);
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final data = await _store.load();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _products = data.products;
+        _actions = data.actions;
+        _loading = false;
+      });
+    } catch (error) {
+      // Whatever went wrong, clear the spinner: a stuck loading indicator
+      // leaves the user with no way forward and no idea why.
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loading = false);
+      _reportLoadIssue('Could not load your shelf: $error');
+      return;
+    }
+    final warning = _store.lastLoadError;
+    if (warning != null) {
+      _reportLoadIssue(warning);
+    }
+  }
+
+  void _reportLoadIssue(String message) {
+    if (!mounted) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 6),
+        ),
+      );
     });
   }
 
+  Future<void> _persist() async {
+    await _store.save(_products, _actions);
+  }
+
+  /// True when [productId] has already been paid for [actionType].
+  ///
+  /// Status is editable, so without this a product could be set back to
+  /// Opened and finished again for another award, indefinitely.
+  bool _alreadyAwarded(String actionType, String productId) {
+    return _actions.any(
+      (item) =>
+          item.actionType == actionType && item.relatedProductId == productId,
+    );
+  }
+
+  void _showEcoMessage(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  Future<void> _addProduct(BeautyProduct product) async {
+    final now = DateTime.now();
+    // Claiming a skipped purchase and then buying into that same category the
+    // same day was not a skip, so the award is taken back.
+    final claimedToday = _actions.any(
+      (item) =>
+          item.actionType == EcoActionTypes.avoidDuplicate &&
+          item.category == product.category &&
+          item.isSameDayAs(now),
+    );
+    final alreadyReversed = _actions.any(
+      (item) =>
+          item.actionType == EcoActionTypes.duplicateReversed &&
+          item.category == product.category &&
+          item.isSameDayAs(now),
+    );
+    final reverseSkip = claimedToday && !alreadyReversed;
+
+    setState(() {
+      _products = [..._products, product];
+      _actions = [
+        if (reverseSkip)
+          EcoAction.created(
+            actionType: EcoActionTypes.duplicateReversed,
+            pointsEarned: -EcoRewards.avoidDuplicate,
+            description:
+                'Added ${product.category} after marking a purchase as avoided.',
+            category: product.category,
+          ),
+        EcoAction.created(
+          actionType: EcoActionTypes.addProduct,
+          pointsEarned: EcoRewards.addProduct,
+          description: '${product.name} added to your beauty shelf.',
+          relatedProductId: product.id,
+          category: product.category,
+        ),
+        ..._actions,
+      ];
+    });
+    if (reverseSkip) {
+      _showEcoMessage('Your ${product.category} purchase was recorded.');
+    }
+    await _persist();
+  }
+
+  Future<void> _updateProduct(BeautyProduct product) async {
+    setState(() {
+      _products = _products
+          .map(
+            (item) => item.id == product.id
+                ? product.copyWith(updatedAt: DateTime.now())
+                : item,
+          )
+          .toList();
+    });
+    await _persist();
+  }
+
+  Future<void> _deleteProduct(String id) async {
+    setState(() {
+      _products = _products.where((item) => item.id != id).toList();
+    });
+    await _persist();
+  }
+
+  Future<void> _markFinished(BeautyProduct product) async {
+    final now = DateTime.now();
+    final paid = _alreadyAwarded(EcoActionTypes.finishProduct, product.id);
+    final beforeExpiry = product.daysRemaining(now) >= 0;
+    final updated = product.copyWith(status: 'Finished', updatedAt: now);
+    setState(() {
+      _products = _products
+          .map((item) => item.id == product.id ? updated : item)
+          .toList();
+      if (!paid) {
+        _actions = [
+          EcoAction.created(
+            actionType: EcoActionTypes.finishProduct,
+            pointsEarned: beforeExpiry
+                ? EcoRewards.finishBeforeExpiry
+                : EcoRewards.finishAfterExpiry,
+            description: beforeExpiry
+                ? '${product.name} finished before expiry.'
+                : '${product.name} finished and removed from waste risk.',
+            relatedProductId: product.id,
+            category: product.category,
+          ),
+          ..._actions,
+        ];
+      }
+    });
+    if (paid) {
+      _showEcoMessage('${product.name} was already marked finished.');
+    }
+    await _persist();
+  }
+
+  Future<void> _markRecycled(BeautyProduct product) async {
+    final now = DateTime.now();
+    final paid = _alreadyAwarded(EcoActionTypes.recycleContainer, product.id);
+    final updated = product.copyWith(status: 'Recycled', updatedAt: now);
+    setState(() {
+      _products = _products
+          .map((item) => item.id == product.id ? updated : item)
+          .toList();
+      if (!paid) {
+        _actions = [
+          EcoAction.created(
+            actionType: EcoActionTypes.recycleContainer,
+            pointsEarned: EcoRewards.recycleContainer,
+            description: '${product.name} container recycled responsibly.',
+            relatedProductId: product.id,
+            category: product.category,
+          ),
+          ..._actions,
+        ];
+      }
+    });
+    if (paid) {
+      _showEcoMessage('${product.name} was already marked recycled.');
+    }
+    await _persist();
+  }
+
+  /// One skipped purchase per category per day.
+  ///
+  /// The wishlist screen only disabled its own button, so leaving and
+  /// returning let the same skip be claimed without limit.
+  Future<void> _avoidDuplicate(String category) async {
+    final now = DateTime.now();
+    final claimedToday = _actions.any(
+      (item) =>
+          item.actionType == EcoActionTypes.avoidDuplicate &&
+          item.category == category &&
+          item.isSameDayAs(now),
+    );
+    if (claimedToday) {
+      _showEcoMessage('You already logged a skipped $category purchase today.');
+      return;
+    }
+    setState(() {
+      _actions = [
+        EcoAction.created(
+          actionType: EcoActionTypes.avoidDuplicate,
+          pointsEarned: EcoRewards.avoidDuplicate,
+          description: 'Skipped a duplicate $category purchase.',
+          category: category,
+        ),
+        ..._actions,
+      ];
+    });
+    await _persist();
+  }
+
+  Future<void> _startNoBuyChallenge() async {
+    setState(() {
+      _actions = [
+        EcoAction.created(
+          actionType: EcoActionTypes.noBuyStarted,
+          pointsEarned: 0,
+          description:
+              'Started a ${EcoRewards.noBuyChallengeDays}-day no-buy challenge.',
+        ),
+        ..._actions,
+      ];
+    });
+    await _persist();
+  }
+
+  /// Pays out only once the challenge has actually run its course.
+  Future<void> _claimNoBuyChallenge() async {
+    final challenge = NoBuyChallenge.from(_actions, DateTime.now());
+    if (!challenge.readyToClaim) {
+      _showEcoMessage('This challenge is not finished yet.');
+      return;
+    }
+    setState(() {
+      _actions = [
+        EcoAction.created(
+          actionType: EcoActionTypes.noBuyCompleted,
+          pointsEarned: EcoRewards.noBuyChallenge,
+          description:
+              'Completed a ${EcoRewards.noBuyChallengeDays}-day no-buy challenge.',
+        ),
+        ..._actions,
+      ];
+    });
+    await _persist();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final screens = <Widget>[
-      _LeaderDashboard(
-        products: _scannedProducts,
-        onScan: () => setState(() => _selectedIndex = 2),
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    final screens = [
+      DashboardScreen(
+        products: _products,
+        userName: widget.user.displayName,
+        onAddTap: () => _openProductForm(),
+        onWishlistTap: _openWishlistCheck,
+        onLogContainer: _openLogContainer,
+        onNavigate: (index) => setState(() => _selectedIndex = index),
       ),
-      const FeaturePlaceholderScreen(
-        title: 'Beauty Shelf',
-        icon: Icons.inventory_2_outlined,
+      InventoryScreen(
+        products: _products,
+        onProductTap: _openProductDetail,
+        onFinished: _markFinished,
+        onRecycle: (product) => _openRecycleMap(product: product),
       ),
       ProductFormScreen(
         onSave: _addProduct,
+        store: _store,
         closeOnSave: false,
-        onSaved: () => setState(() => _selectedIndex = 0),
+        onSaved: () => setState(() => _selectedIndex = 1),
       ),
-      const FeaturePlaceholderScreen(
-        title: 'Glow Assistant',
-        icon: Icons.chat_bubble_outline,
+      GlowAssistantScreen(
+        products: _products,
+        store: _store,
+        userInitial: widget.user.displayName.isEmpty
+            ? 'U'
+            : widget.user.displayName.substring(0, 1).toUpperCase(),
       ),
-      const FeaturePlaceholderScreen(
-        title: 'Cycle',
-        icon: Icons.autorenew_outlined,
+      GlowSaverScreen(
+        products: _products,
+        actions: _actions,
+        onStartNoBuyChallenge: _startNoBuyChallenge,
+        onClaimNoBuyChallenge: _claimNoBuyChallenge,
+        onOpenRecycleMap: _openRecycleMap,
+        onOpenWishlistCheck: _openWishlistCheck,
+        onOpenShelf: () => setState(() => _selectedIndex = 1),
+        onLogContainer: _openLogContainer,
       ),
     ];
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'GlowCycle',
-          style: TextStyle(fontWeight: FontWeight.w900),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) {
+          return;
+        }
+        // Back from an inner tab returns to Home first, so leaving the app is
+        // always a deliberate second press rather than a surprise.
+        if (_selectedIndex != 0) {
+          setState(() => _selectedIndex = 0);
+          return;
+        }
+        if (await _confirmExit()) {
+          await SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        body: Container(
+          color: surface,
+          child: SafeArea(
+            child: Column(
+              children: [
+                if (_selectedIndex != 2)
+                  GlowTopBar(
+                    user: widget.user,
+                    onImpactRecords: _openImpactRecords,
+                    onRecycleMap: _openRecycleMap,
+                    onSignOut: widget.onSignOut,
+                  ),
+                Expanded(child: screens[_selectedIndex]),
+              ],
+            ),
+          ),
         ),
-        leading: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Image.asset('assets/icon/glowcycle_icon.png'),
+        bottomNavigationBar: GlowBottomNav(
+          selectedIndex: _selectedIndex,
+          onSelected: (value) => setState(() => _selectedIndex = value),
         ),
-      ),
-      body: SafeArea(child: screens[_selectedIndex]),
-      bottomNavigationBar: GlowBottomNav(
-        selectedIndex: _selectedIndex,
-        onSelected: (index) => setState(() => _selectedIndex = index),
       ),
     );
   }
-}
 
-class _LeaderDashboard extends StatelessWidget {
-  const _LeaderDashboard({required this.products, required this.onScan});
-
-  final List<BeautyProduct> products;
-  final VoidCallback onScan;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Text(
-          'Smart beauty inventory',
-          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-            color: ink,
-            fontWeight: FontWeight.w900,
+  /// Confirms leaving the app, so a stray back press does not drop the user
+  /// out mid-task.
+  Future<bool> _confirmExit() async {
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Leave GlowCycle?'),
+        content: const Text(
+          'Your shelf and eco actions are already saved. You can pick up '
+          'where you left off next time.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Stay'),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Scan a product package and review every extracted field before adding it.',
-          style: TextStyle(color: ink.withValues(alpha: 0.66), height: 1.4),
-        ),
-        const SizedBox(height: 20),
-        FilledButton.icon(
-          onPressed: onScan,
-          icon: const Icon(Icons.document_scanner_outlined),
-          label: const Text('Scan a product'),
-        ),
-        const SizedBox(height: 24),
-        Text(
-          'Scanned products',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w900,
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Leave'),
           ),
-        ),
-        const SizedBox(height: 10),
-        if (products.isEmpty)
-          const Card(
-            child: Padding(
-              padding: EdgeInsets.all(18),
-              child: Text('No product has been scanned in this session.'),
-            ),
-          )
-        else
-          for (final product in products)
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.spa_outlined, color: primary),
-                title: Text(product.name),
-                subtitle: Text('${product.brand} - ${product.category}'),
-                trailing: product.scanSource == 'gemini-vision'
-                    ? const Icon(Icons.auto_awesome, color: primary)
-                    : const Icon(Icons.text_snippet_outlined),
-              ),
-            ),
-      ],
+        ],
+      ),
     );
+    return leave ?? false;
+  }
+
+  Future<void> _openProductForm({BeautyProduct? product}) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ProductFormScreen(
+          product: product,
+          onSave: product == null ? _addProduct : _updateProduct,
+          store: _store,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openWishlistCheck() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => WishlistScreen(
+          products: _products,
+          onAvoidDuplicate: _avoidDuplicate,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openProductDetail(BeautyProduct product) async {
+    final latest = _products.firstWhere(
+      (item) => item.id == product.id,
+      orElse: () => product,
+    );
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ProductDetailScreen(
+          product: latest,
+          onEdit: () => _openProductForm(product: latest),
+          onDelete: () => _deleteProduct(latest.id),
+          onFinished: () => _markFinished(latest),
+          onRecycled: () => _openRecycleMap(product: latest),
+        ),
+      ),
+    );
+  }
+
+  /// Step six of the proposal's user journey: reflect on points, badges, and
+  /// recent sustainable actions. Reached from the top bar's eco impact icon.
+  Future<void> _openImpactRecords() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EcoPointsScreen(products: _products, actions: _actions),
+      ),
+    );
+  }
+
+  /// Steps four and five of the proposal's journey, finishing a product and
+  /// recycling its container, without digging through the shelf.
+  Future<void> _openLogContainer() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => LogContainerScreen(
+          products: _products,
+          onFindRecyclePoint: (product) => _openRecycleMap(product: product),
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _openRecycleMap({BeautyProduct? product}) async {
+    final recycled = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => RecycleScreen(
+          product: product,
+          onRecycled: product == null ? null : () => _markRecycled(product),
+        ),
+      ),
+    );
+    return recycled ?? false;
   }
 }
